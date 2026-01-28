@@ -30,6 +30,14 @@ export function createRecorderInstance() {
     reset: () => {
       recorder.clear();
       lastContent = '';
+    },
+    /**
+     * Set the base content for proper change detection
+     * Call this when starting a new session with existing content
+     * @param {string} content - The current editor content
+     */
+    setBaseContent: (content) => {
+      lastContent = content;
     }
   };
 }

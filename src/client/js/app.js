@@ -309,6 +309,7 @@ async function saveDocument() {
   sessionStartTime = Date.now();
   sessionBaseContent = content; // New session starts with current content
   recorder.reset();
+  recorder.setBaseContent(content); // Set base content for proper change detection
   recorder.startSession();
 
   console.log('Document saved');
@@ -355,6 +356,7 @@ async function handleOpenFile(event) {
     sessionStartTime = Date.now();
     sessionBaseContent = doc.finalContent || ''; // Session starts with existing content
     recorder.reset();
+    recorder.setBaseContent(sessionBaseContent); // Set base content for proper change detection
     recorder.startSession();
 
     updatePreview(doc.finalContent || '');
