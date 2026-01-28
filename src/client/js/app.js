@@ -8,7 +8,7 @@ import { createEditor, getEditorContent, setEditorContent } from './editor.js';
 import { createRecorderInstance, getRecordedEvents, loadExistingEvents } from './editorRecorder.js';
 import { initViewer, loadProvenanceFile } from './viewer.js';
 import { createProvenanceDocument, addSession, finalizeDocument, serialize, parse, validate, getStatistics } from '../../core/format.js';
-import { initVault, isFileSystemAccessSupported, isVaultReady, showVaultPicker, openFileFromVault, saveFileToVault, createNewFileInVault } from './vault.js';
+import { initVault, isFileSystemAccessSupported, isVaultReady, showVaultPicker, openFileFromVault, saveFileToVault, createNewFileInVault, renameFileInVault, deleteFileFromVault } from './vault.js';
 import { initSidebar, updateSidebarState, refreshSidebar, highlightActiveFile, clearActiveFile, setFileListMode } from './sidebar.js';
 import { initAutosave, scheduleAutosave, resetAutosave, setSaveCallback } from './autosave.js';
 
@@ -24,10 +24,13 @@ let currentFilename = null;
 
 // DOM Elements
 let navEditor, navViewer, editorView, viewerView, recordingStatus, docTitle;
-let btnNew, btnOpen, btnSave, fileInput, openFileInput;
+let btnNew, fileInput;
 let charCount, wordCount, eventCount, sessionTime;
 let onboardingModal, btnSkipOnboarding, btnSetupVault;
 let browserWarning, btnDismissWarning;
+
+// Flag to track if auto-create has been triggered for new documents
+let pendingAutoCreate = false;
 
 /**
  * Initialize the application
@@ -50,7 +53,8 @@ async function init() {
   // Initialize sidebar with file select callbacks for both modes
   initSidebar({
     onFileSelect: handleFileSelectFromSidebar,
-    onFileSelectForViewer: handleFileSelectForViewer
+    onFileSelectForViewer: handleFileSelectForViewer,
+    onFileDelete: handleFileDelete
   });
 
   // Initialize autosave
@@ -102,10 +106,7 @@ function getDOMElements() {
   recordingStatus = document.getElementById('recording-status');
   docTitle = document.getElementById('doc-title');
   btnNew = document.getElementById('btn-new');
-  btnOpen = document.getElementById('btn-open');
-  btnSave = document.getElementById('btn-save');
   fileInput = document.getElementById('file-input');
-  openFileInput = document.getElementById('open-file-input');
   charCount = document.getElementById('char-count');
   wordCount = document.getElementById('word-count');
   eventCount = document.getElementById('event-count');
@@ -127,12 +128,9 @@ function setupEventListeners() {
 
   // Editor toolbar
   btnNew.addEventListener('click', confirmNewDocument);
-  btnOpen.addEventListener('click', () => openFileInput.click());
-  btnSave.addEventListener('click', saveDocument);
 
   // File inputs
   fileInput.addEventListener('change', handleFileLoad);
-  openFileInput.addEventListener('change', handleOpenFile);
 
   // Document title
   docTitle.addEventListener('input', handleTitleChange);
@@ -163,13 +161,86 @@ function setupEventListeners() {
 /**
  * Handle title input changes
  */
-function handleTitleChange() {
+async function handleTitleChange() {
   if (currentDocument) {
     currentDocument.metadata.title = docTitle.value || 'Untitled';
   }
-  // Schedule autosave when title changes
-  if (currentFileHandle) {
+
+  // Rename file if we have a handle and the title changed
+  if (currentFileHandle && isVaultReady()) {
+    const newTitle = docTitle.value || 'Untitled';
+    const expectedFilename = sanitizeFilename(newTitle) + '.provenance';
+
+    // Only rename if filename would actually change
+    if (currentFilename && currentFilename !== expectedFilename) {
+      try {
+        const newHandle = await renameFileInVault(currentFileHandle, newTitle);
+        if (newHandle) {
+          currentFileHandle = newHandle;
+          currentFilename = newHandle.name;
+          highlightActiveFile(currentFilename);
+          refreshSidebar();
+        }
+      } catch (err) {
+        console.error('Error renaming file:', err);
+        // Continue with autosave even if rename fails
+      }
+    }
+
+    // Schedule autosave when title changes
     scheduleAutosave(getEditorContent(), true);
+  }
+}
+
+/**
+ * Auto-create a file in the vault for new documents
+ */
+async function autoCreateFile() {
+  if (!isVaultReady()) return;
+
+  try {
+    const title = docTitle.value || 'Untitled';
+    currentFileHandle = await createNewFileInVault(currentDocument, title);
+    currentFilename = currentFileHandle.name;
+
+    // Highlight in sidebar and refresh list
+    highlightActiveFile(currentFilename);
+    refreshSidebar();
+
+    console.log('Auto-created file:', currentFilename);
+  } catch (err) {
+    console.error('Error auto-creating file:', err);
+    // Don't block the user if auto-create fails
+  }
+}
+
+/**
+ * Handle file deletion from sidebar
+ */
+async function handleFileDelete(fileHandle, filename) {
+  // Confirm deletion
+  const confirmed = confirm(
+    `Are you sure you want to delete "${filename.replace('.provenance', '')}"?\n\n` +
+    'This action cannot be undone. The file and all its writing history will be permanently deleted.'
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await deleteFileFromVault(fileHandle);
+
+    // If this was the current file, create a new document
+    if (currentFilename === filename) {
+      newDocument();
+    }
+
+    // Refresh sidebar
+    refreshSidebar();
+
+    console.log('File deleted:', filename);
+  } catch (err) {
+    alert('Error deleting file: ' + err.message);
+    console.error(err);
   }
 }
 
@@ -204,6 +275,7 @@ function newDocument() {
   sessionBaseContent = ''; // New document starts empty
   currentFileHandle = null; // No file handle for new document
   currentFilename = null;
+  pendingAutoCreate = true; // Mark for auto-create on first content change
 
   // Clear editor
   setEditorContent('');
@@ -242,12 +314,18 @@ function confirmNewDocument() {
 /**
  * Handle editor content changes
  */
-function handleEditorChange(content) {
+async function handleEditorChange(content) {
   // Update preview
   updatePreview(content);
 
   // Update status bar
   updateStatusBar();
+
+  // Auto-create file on first content change if vault is ready
+  if (pendingAutoCreate && content.length > 0 && isVaultReady()) {
+    pendingAutoCreate = false;
+    await autoCreateFile();
+  }
 
   // Schedule autosave if we have a file handle
   if (currentFileHandle) {
@@ -550,63 +628,6 @@ async function handleFileSelectForViewer(fileHandle, filename) {
     alert('Error opening file for viewing: ' + err.message);
     console.error(err);
   }
-}
-
-/**
- * Handle opening a .provenance file for continued editing (via file input)
- */
-async function handleOpenFile(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  try {
-    const text = await file.text();
-    const doc = parse(text);
-
-    // Validate
-    const validation = await validate(doc);
-    if (!validation.valid) {
-      alert('Warning: This file has validation errors:\n' + validation.errors.join('\n'));
-    }
-
-    // Load into editor
-    currentDocument = doc;
-    currentFileHandle = null; // No file handle for file input
-    currentFilename = null;
-    setEditorContent(doc.finalContent || '');
-    docTitle.value = doc.metadata.title || '';
-
-    // Load existing events for reference
-    const allEvents = [];
-    for (const session of doc.sessions) {
-      allEvents.push(...session.events);
-    }
-    loadExistingEvents(allEvents);
-
-    // Start new session
-    currentSessionId = generateSessionId();
-    sessionStartTime = Date.now();
-    sessionBaseContent = doc.finalContent || '';
-    recorder.reset();
-    recorder.setBaseContent(sessionBaseContent);
-    recorder.startSession();
-
-    // Reset autosave
-    resetAutosave(sessionBaseContent);
-
-    // Update UI
-    updatePreview(doc.finalContent || '');
-    updateStatusBar();
-    clearActiveFile();
-
-    console.log('Document opened for editing');
-  } catch (err) {
-    alert('Error opening file: ' + err.message);
-    console.error(err);
-  }
-
-  // Reset file input
-  event.target.value = '';
 }
 
 /**

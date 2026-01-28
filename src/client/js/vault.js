@@ -342,6 +342,80 @@ export async function createNewFileInVault(document, filename) {
 }
 
 /**
+ * Rename a file in the vault
+ * Note: File System Access API doesn't support direct rename, so we copy and delete
+ * @param {FileSystemFileHandle} oldHandle - The current file handle
+ * @param {string} newTitle - The new title (without extension)
+ * @returns {Promise<FileSystemFileHandle|null>} - New file handle or null if no change needed
+ */
+export async function renameFileInVault(oldHandle, newTitle) {
+  if (!directoryHandle) {
+    throw new Error('Vault not configured');
+  }
+
+  // Sanitize new filename
+  const sanitizedName = newTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'untitled';
+  const newFilename = `${sanitizedName}.provenance`;
+
+  // Check if filename is the same (no rename needed)
+  if (oldHandle.name === newFilename) {
+    return null;
+  }
+
+  // Check if new filename already exists
+  let finalFilename = newFilename;
+  let counter = 1;
+
+  while (true) {
+    try {
+      const existingHandle = await directoryHandle.getFileHandle(finalFilename);
+      // File exists - check if it's the same file
+      if (existingHandle.name === oldHandle.name) {
+        break;
+      }
+      // Different file exists, try a new name
+      finalFilename = `${sanitizedName}_${counter}.provenance`;
+      counter++;
+    } catch {
+      // File doesn't exist, we can use this name
+      break;
+    }
+  }
+
+  // Read old file content
+  const oldFile = await oldHandle.getFile();
+  const content = await oldFile.text();
+
+  // Create new file with new name
+  const newHandle = await directoryHandle.getFileHandle(finalFilename, { create: true });
+  const writable = await newHandle.createWritable();
+  await writable.write(content);
+  await writable.close();
+
+  // Delete old file
+  try {
+    await directoryHandle.removeEntry(oldHandle.name);
+  } catch (err) {
+    console.error('Error removing old file:', err);
+    // Continue anyway - the new file was created
+  }
+
+  return newHandle;
+}
+
+/**
+ * Delete a file from the vault
+ * @param {FileSystemFileHandle} fileHandle - The file to delete
+ */
+export async function deleteFileFromVault(fileHandle) {
+  if (!directoryHandle) {
+    throw new Error('Vault not configured');
+  }
+
+  await directoryHandle.removeEntry(fileHandle.name);
+}
+
+/**
  * Check if vault is configured and ready
  */
 export function isVaultReady() {

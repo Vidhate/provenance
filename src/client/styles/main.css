@@ -287,6 +287,30 @@ body {
   margin-top: 0.25rem;
 }
 
+.file-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+
+.file-item:hover .file-delete-btn {
+  opacity: 1;
+}
+
+.file-delete-btn:hover {
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.1);
+}
+
 /* Sidebar States */
 .sidebar-loading,
 .sidebar-error {
