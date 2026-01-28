@@ -86,7 +86,7 @@ Provenance solves this by capturing the *process* of writing, not just the outpu
 ## MVP Features
 
 ### Writer Mode
-- Markdown editor with live preview (split or toggle view)
+- Split-pane markdown editor (editor + live preview)
 - Background recording of all input events with timestamps
 - Copy/paste detection (flagged distinctly in the proof)
 - Save/resume sessions across days
@@ -202,6 +202,66 @@ Provenance solves this by capturing the *process* of writing, not just the outpu
 - [ ] Compression for large documents
 - [ ] Offline-first with sync capabilities
 - [ ] Mobile support
+
+---
+
+## Git Workflow
+
+**IMPORTANT:** Follow proper git etiquette with atomic commits.
+
+### Branch Strategy
+- `main` - Stable releases, production-ready code
+- `dev` - Development branch for feature integration
+- `feature/<name>` - Individual feature branches (e.g., `feature/wysiwyg-editor`)
+- `fix/<name>` - Bug fix branches (e.g., `fix/multi-session-replay`)
+
+### Commit Guidelines
+1. **Commit atomically** - Each commit should represent ONE logical change
+2. **Commit frequently** - Don't batch multiple features/fixes into one commit
+3. **Write clear messages** - Use conventional commit format:
+   - `feat: add WYSIWYG markdown editor`
+   - `fix: resolve multi-session replay content duplication`
+   - `refactor: extract hash chain logic to separate module`
+   - `docs: update CLAUDE.md with git workflow`
+   - `chore: update dependencies`
+
+### Workflow for Features
+```bash
+# Create feature branch from dev
+git checkout dev
+git checkout -b feature/my-feature
+
+# Make atomic commits as you work
+git add <specific-files>
+git commit -m "feat: implement X"
+
+# When feature is complete, merge to dev
+git checkout dev
+git merge feature/my-feature
+
+# Delete feature branch
+git branch -d feature/my-feature
+```
+
+### Workflow for Bug Fixes
+```bash
+# Create fix branch
+git checkout -b fix/bug-description
+
+# Fix and commit
+git add <specific-files>
+git commit -m "fix: describe what was fixed"
+
+# Merge to dev (or main for hotfixes)
+git checkout dev
+git merge fix/bug-description
+```
+
+### What NOT to Do
+- Don't create massive commits with multiple unrelated changes
+- Don't commit directly to main for non-trivial changes
+- Don't leave uncommitted work for long periods
+- Don't use vague commit messages like "updates" or "fixes"
 
 ---
 

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Provenance - Prove Your Writing is Human</title>
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <h1 class="logo">Provenance</h1>
+      <nav class="nav">
+        <button id="nav-editor" class="nav-btn active">Write</button>
+        <button id="nav-viewer" class="nav-btn">Verify</button>
+      </nav>
+      <div class="header-actions">
+        <span id="recording-status" class="status-indicator"></span>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- Editor View -->
+      <section id="editor-view" class="view active">
+        <div class="editor-toolbar">
+          <input type="text" id="doc-title" placeholder="Document title..." class="doc-title-input">
+          <div class="toolbar-actions">
+            <button id="btn-new" class="toolbar-btn" title="New Document">New</button>
+            <button id="btn-open" class="toolbar-btn" title="Open .provenance file">Open</button>
+            <button id="btn-save" class="toolbar-btn" title="Save .provenance file">Save</button>
+          </div>
+        </div>
+
+        <div class="editor-container">
+          <div class="editor-pane">
+            <div class="pane-header">
+              <span>Markdown</span>
+            </div>
+            <div id="editor"></div>
+          </div>
+          <div class="preview-pane">
+            <div class="pane-header">
+              <span>Preview</span>
+            </div>
+            <div id="preview" class="markdown-preview"></div>
+          </div>
+        </div>
+
+        <div class="editor-status-bar">
+          <span id="char-count">0 characters</span>
+          <span id="word-count">0 words</span>
+          <span id="event-count">0 events recorded</span>
+          <span id="session-time">Session: 0:00</span>
+        </div>
+      </section>
+
+      <!-- Viewer View -->
+      <section id="viewer-view" class="view">
+        <div class="viewer-toolbar">
+          <button id="btn-load-proof" class="toolbar-btn">Load .provenance file</button>
+          <div id="verification-status" class="verification-badge"></div>
+        </div>
+
+        <div id="viewer-empty" class="viewer-empty">
+          <p>Load a .provenance file to verify and replay the writing process</p>
+        </div>
+
+        <div id="viewer-content" class="viewer-content hidden">
+          <div class="viewer-info">
+            <h2 id="viewer-title">Document Title</h2>
+            <div class="viewer-stats" id="viewer-stats"></div>
+          </div>
+
+          <div class="replay-container">
+            <div class="replay-controls">
+              <button id="btn-play" class="replay-btn">Play</button>
+              <button id="btn-pause" class="replay-btn">Pause</button>
+              <button id="btn-reset" class="replay-btn">Reset</button>
+              <div class="speed-control">
+                <label>Speed:</label>
+                <select id="replay-speed">
+                  <option value="1">1x</option>
+                  <option value="2">2x</option>
+                  <option value="5" selected>5x</option>
+                  <option value="10">10x</option>
+                  <option value="50">50x (skip pauses)</option>
+                </select>
+              </div>
+              <div class="progress-container">
+                <input type="range" id="replay-progress" min="0" max="100" value="0" class="progress-slider">
+                <span id="replay-time">0:00 / 0:00</span>
+              </div>
+            </div>
+
+            <div class="replay-display">
+              <div id="replay-editor" class="replay-editor"></div>
+              <div class="event-indicator" id="event-indicator"></div>
+            </div>
+
+            <div class="session-timeline" id="session-timeline">
+              <!-- Session markers will be added here -->
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <input type="file" id="file-input" accept=".provenance" style="display: none;">
+  <input type="file" id="open-file-input" accept=".provenance" style="display: none;">
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

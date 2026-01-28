@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+*.provenance
+
+# Editor directories
+.idea/
+.vscode/
+
+# Test provenance files (keep examples)
+test-output/

@@ -1,0 +1,30 @@
+{
+  "name": "provenance",
+  "version": "1.0.0",
+  "description": "Prove your writing is human-crafted with verifiable proof of the creative process",
+  "type": "module",
+  "main": "src/server/index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node src/server/index.js"
+  },
+  "keywords": [
+    "writing",
+    "authenticity",
+    "provenance",
+    "human",
+    "ai-detection",
+    "proof"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
