@@ -29,8 +29,9 @@ let charCount, wordCount, eventCount, sessionTime;
 let onboardingModal, btnSkipOnboarding, btnSetupVault;
 let browserWarning, btnDismissWarning;
 
-// Flag to track if auto-create has been triggered for new documents
-let pendingAutoCreate = false;
+// Flags to track document state
+let pendingAutoCreate = false;  // File not yet created in vault
+let workHasBegun = false;       // User has typed at least one character
 
 /**
  * Initialize the application
@@ -194,9 +195,10 @@ async function handleTitleChange() {
 
 /**
  * Auto-create a file in the vault for new documents
+ * Only called when work has actually begun (first keystroke)
  */
 async function autoCreateFile() {
-  if (!isVaultReady()) return;
+  if (!isVaultReady() || !workHasBegun) return;
 
   try {
     const title = docTitle.value || 'Untitled';
@@ -205,7 +207,7 @@ async function autoCreateFile() {
 
     // Highlight in sidebar and refresh list
     highlightActiveFile(currentFilename);
-    refreshSidebar();
+    await refreshSidebar();
 
     console.log('Auto-created file:', currentFilename);
   } catch (err) {
@@ -229,13 +231,13 @@ async function handleFileDelete(fileHandle, filename) {
   try {
     await deleteFileFromVault(fileHandle);
 
+    // Refresh sidebar first to remove the deleted file from the list
+    await refreshSidebar();
+
     // If this was the current file, create a new document
     if (currentFilename === filename) {
       newDocument();
     }
-
-    // Refresh sidebar
-    refreshSidebar();
 
     console.log('File deleted:', filename);
   } catch (err) {
@@ -271,26 +273,27 @@ function switchView(view) {
 function newDocument() {
   currentDocument = createProvenanceDocument('Untitled');
   currentSessionId = generateSessionId();
-  sessionStartTime = Date.now();
+  sessionStartTime = null; // Will be set when work begins
   sessionBaseContent = ''; // New document starts empty
   currentFileHandle = null; // No file handle for new document
   currentFilename = null;
   pendingAutoCreate = true; // Mark for auto-create on first content change
+  workHasBegun = false; // No work yet
 
   // Clear editor
   setEditorContent('');
 
-  // Reset recorder
+  // Reset recorder but DON'T start session yet
   recorder.reset();
-  recorder.startSession();
+  // Session will start when first keystroke is captured
 
   // Reset autosave
   resetAutosave('');
 
   // Update UI
   docTitle.value = '';
-  recordingStatus.textContent = 'Recording';
-  recordingStatus.classList.add('recording');
+  recordingStatus.textContent = 'Ready';
+  recordingStatus.classList.remove('recording');
 
   // Clear active file in sidebar
   clearActiveFile();
@@ -321,14 +324,29 @@ async function handleEditorChange(content) {
   // Update status bar
   updateStatusBar();
 
-  // Auto-create file on first content change if vault is ready
-  if (pendingAutoCreate && content.length > 0 && isVaultReady()) {
-    pendingAutoCreate = false;
-    await autoCreateFile();
+  // Check if this is the first real content (work has begun)
+  // We consider work to have begun if there's any content change from empty
+  // This happens on first keystroke
+  if (!workHasBegun && content.length > 0) {
+    workHasBegun = true;
+    sessionStartTime = Date.now();
+
+    // Start recording session now
+    recorder.startSession();
+
+    // Update UI to show recording
+    recordingStatus.textContent = 'Recording';
+    recordingStatus.classList.add('recording');
+
+    // Auto-create file in vault if ready
+    if (pendingAutoCreate && isVaultReady()) {
+      pendingAutoCreate = false;
+      await autoCreateFile();
+    }
   }
 
-  // Schedule autosave if we have a file handle
-  if (currentFileHandle) {
+  // Schedule autosave if we have a file handle AND work has begun
+  if (currentFileHandle && workHasBegun) {
     scheduleAutosave(content, true);
   }
 }
@@ -511,7 +529,8 @@ function downloadDocument() {
  * Perform autosave (called by autosave module)
  */
 async function performAutosave(content) {
-  if (!currentFileHandle) return;
+  // Don't save if no file handle or work hasn't begun
+  if (!currentFileHandle || !workHasBegun) return;
 
   const events = getRecordedEvents();
   if (!events || events.length === 0) return;
@@ -587,10 +606,13 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     }
     loadExistingEvents(allEvents);
 
-    // Start new session
+    // Start new session - work has already begun on existing documents
     currentSessionId = generateSessionId();
     sessionStartTime = Date.now();
     sessionBaseContent = doc.finalContent || '';
+    workHasBegun = true; // Existing document, work has already begun
+    pendingAutoCreate = false; // Already has a file
+
     recorder.reset();
     recorder.setBaseContent(sessionBaseContent);
     recorder.startSession();
@@ -602,6 +624,8 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     updatePreview(doc.finalContent || '');
     updateStatusBar();
     highlightActiveFile(filename);
+    recordingStatus.textContent = 'Recording';
+    recordingStatus.classList.add('recording');
 
     console.log('Document opened from sidebar');
   } catch (err) {
