@@ -1,13 +1,16 @@
 /**
  * Provenance - Main Application
  *
- * Ties together the editor, recorder, and viewer components.
+ * Ties together the editor, recorder, viewer, vault, and sidebar components.
  */
 
 import { createEditor, getEditorContent, setEditorContent } from './editor.js';
 import { createRecorderInstance, getRecordedEvents, loadExistingEvents } from './editorRecorder.js';
 import { initViewer, loadProvenanceFile } from './viewer.js';
 import { createProvenanceDocument, addSession, finalizeDocument, serialize, parse, validate, getStatistics } from '../../core/format.js';
+import { initVault, isFileSystemAccessSupported, isVaultReady, showVaultPicker, openFileFromVault, saveFileToVault, createNewFileInVault } from './vault.js';
+import { initSidebar, updateSidebarState, refreshSidebar, highlightActiveFile, clearActiveFile } from './sidebar.js';
+import { initAutosave, scheduleAutosave, resetAutosave, setSaveCallback } from './autosave.js';
 
 // State
 let currentDocument = null;
@@ -16,28 +19,23 @@ let sessionStartTime = null;
 let sessionBaseContent = ''; // Content at the start of current session
 let recorder = null;
 let sessionTimer = null;
+let currentFileHandle = null; // File handle for vault-based saving
+let currentFilename = null;
 
 // DOM Elements
-const navEditor = document.getElementById('nav-editor');
-const navViewer = document.getElementById('nav-viewer');
-const editorView = document.getElementById('editor-view');
-const viewerView = document.getElementById('viewer-view');
-const recordingStatus = document.getElementById('recording-status');
-const docTitle = document.getElementById('doc-title');
-const btnNew = document.getElementById('btn-new');
-const btnOpen = document.getElementById('btn-open');
-const btnSave = document.getElementById('btn-save');
-const fileInput = document.getElementById('file-input');
-const openFileInput = document.getElementById('open-file-input');
-const charCount = document.getElementById('char-count');
-const wordCount = document.getElementById('word-count');
-const eventCount = document.getElementById('event-count');
-const sessionTime = document.getElementById('session-time');
+let navEditor, navViewer, editorView, viewerView, recordingStatus, docTitle;
+let btnNew, btnOpen, btnSave, fileInput, openFileInput;
+let charCount, wordCount, eventCount, sessionTime;
+let onboardingModal, btnSkipOnboarding, btnSetupVault;
+let browserWarning, btnDismissWarning;
 
 /**
  * Initialize the application
  */
 async function init() {
+  // Get DOM elements
+  getDOMElements();
+
   // Initialize editor
   await createEditor(document.getElementById('editor'), {
     onChange: handleEditorChange
@@ -49,6 +47,37 @@ async function init() {
   // Initialize viewer
   initViewer();
 
+  // Initialize sidebar with file select callback
+  initSidebar({
+    onFileSelect: handleFileSelectFromSidebar
+  });
+
+  // Initialize autosave
+  initAutosave({
+    onSave: performAutosave
+  });
+
+  // Check browser compatibility and initialize vault
+  if (isFileSystemAccessSupported()) {
+    const vaultReady = await initVault();
+
+    if (vaultReady) {
+      updateSidebarState(true);
+    } else {
+      // Check if this is first visit
+      const hasVisited = localStorage.getItem('provenance-visited');
+      if (!hasVisited) {
+        showOnboardingModal();
+      } else {
+        updateSidebarState(false);
+      }
+    }
+  } else {
+    // Show browser compatibility warning
+    showBrowserWarning();
+    updateSidebarState(false);
+  }
+
   // Create new document
   newDocument();
 
@@ -59,6 +88,32 @@ async function init() {
   startSessionTimer();
 
   console.log('Provenance initialized');
+}
+
+/**
+ * Get all required DOM elements
+ */
+function getDOMElements() {
+  navEditor = document.getElementById('nav-editor');
+  navViewer = document.getElementById('nav-viewer');
+  editorView = document.getElementById('editor-view');
+  viewerView = document.getElementById('viewer-view');
+  recordingStatus = document.getElementById('recording-status');
+  docTitle = document.getElementById('doc-title');
+  btnNew = document.getElementById('btn-new');
+  btnOpen = document.getElementById('btn-open');
+  btnSave = document.getElementById('btn-save');
+  fileInput = document.getElementById('file-input');
+  openFileInput = document.getElementById('open-file-input');
+  charCount = document.getElementById('char-count');
+  wordCount = document.getElementById('word-count');
+  eventCount = document.getElementById('event-count');
+  sessionTime = document.getElementById('session-time');
+  onboardingModal = document.getElementById('onboarding-modal');
+  btnSkipOnboarding = document.getElementById('btn-skip-onboarding');
+  btnSetupVault = document.getElementById('btn-setup-vault');
+  browserWarning = document.getElementById('browser-warning');
+  btnDismissWarning = document.getElementById('btn-dismiss-warning');
 }
 
 /**
@@ -79,20 +134,42 @@ function setupEventListeners() {
   openFileInput.addEventListener('change', handleOpenFile);
 
   // Document title
-  docTitle.addEventListener('input', () => {
-    if (currentDocument) {
-      currentDocument.metadata.title = docTitle.value || 'Untitled';
-    }
-  });
+  docTitle.addEventListener('input', handleTitleChange);
+
+  // Onboarding modal
+  if (btnSkipOnboarding) {
+    btnSkipOnboarding.addEventListener('click', handleSkipOnboarding);
+  }
+  if (btnSetupVault) {
+    btnSetupVault.addEventListener('click', handleSetupVault);
+  }
+
+  // Browser warning
+  if (btnDismissWarning) {
+    btnDismissWarning.addEventListener('click', hideBrowserWarning);
+  }
 
   // Handle page unload - warn about unsaved changes
   window.addEventListener('beforeunload', (e) => {
     const events = getRecordedEvents();
-    if (events && events.length > 0) {
+    if (events && events.length > 0 && !currentFileHandle) {
       e.preventDefault();
       e.returnValue = '';
     }
   });
+}
+
+/**
+ * Handle title input changes
+ */
+function handleTitleChange() {
+  if (currentDocument) {
+    currentDocument.metadata.title = docTitle.value || 'Untitled';
+  }
+  // Schedule autosave when title changes
+  if (currentFileHandle) {
+    scheduleAutosave(getEditorContent(), true);
+  }
 }
 
 /**
@@ -120,6 +197,8 @@ function newDocument() {
   currentSessionId = generateSessionId();
   sessionStartTime = Date.now();
   sessionBaseContent = ''; // New document starts empty
+  currentFileHandle = null; // No file handle for new document
+  currentFilename = null;
 
   // Clear editor
   setEditorContent('');
@@ -128,10 +207,16 @@ function newDocument() {
   recorder.reset();
   recorder.startSession();
 
+  // Reset autosave
+  resetAutosave('');
+
   // Update UI
   docTitle.value = '';
   recordingStatus.textContent = 'Recording';
   recordingStatus.classList.add('recording');
+
+  // Clear active file in sidebar
+  clearActiveFile();
 
   updateStatusBar();
 }
@@ -141,7 +226,7 @@ function newDocument() {
  */
 function confirmNewDocument() {
   const events = getRecordedEvents();
-  if (events && events.length > 10) {
+  if (events && events.length > 10 && !currentFileHandle) {
     if (!confirm('You have unsaved work. Create a new document anyway?')) {
       return;
     }
@@ -158,6 +243,11 @@ function handleEditorChange(content) {
 
   // Update status bar
   updateStatusBar();
+
+  // Schedule autosave if we have a file handle
+  if (currentFileHandle) {
+    scheduleAutosave(content, true);
+  }
 }
 
 /**
@@ -267,7 +357,8 @@ function generateSessionId() {
 }
 
 /**
- * Save the current document as a .provenance file
+ * Save the current document
+ * Uses vault if available, otherwise falls back to download
  */
 async function saveDocument() {
   const content = getEditorContent();
@@ -278,22 +369,48 @@ async function saveDocument() {
     return;
   }
 
-  // End current session
+  // Prepare document for saving
   const endTime = Date.now();
-
-  // Add session to document with the base content that existed at session start
   addSession(currentDocument, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
-
-  // Finalize document
   await finalizeDocument(currentDocument, content);
-
-  // Update title
   currentDocument.metadata.title = docTitle.value || 'Untitled';
 
-  // Serialize
-  const json = serialize(currentDocument);
+  // Try vault-based save first
+  if (isVaultReady()) {
+    try {
+      if (currentFileHandle) {
+        // Save to existing file
+        await saveFileToVault(currentDocument, currentFileHandle);
+      } else {
+        // Create new file in vault
+        const filename = docTitle.value || 'Untitled';
+        currentFileHandle = await createNewFileInVault(currentDocument, filename);
+        currentFilename = currentFileHandle.name;
+        highlightActiveFile(currentFilename);
+      }
 
-  // Download
+      // Refresh sidebar to show updated file
+      refreshSidebar();
+
+      console.log('Document saved to vault');
+    } catch (err) {
+      console.error('Vault save failed, falling back to download:', err);
+      downloadDocument();
+    }
+  } else {
+    // Fall back to download
+    downloadDocument();
+  }
+
+  // Start a new session (continuing the document)
+  startNewSession(content);
+}
+
+/**
+ * Download document as file (fallback for non-vault save)
+ */
+function downloadDocument() {
+  const json = serialize(currentDocument);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -304,15 +421,51 @@ async function saveDocument() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  // Start a new session (continuing the document)
+  console.log('Document downloaded');
+}
+
+/**
+ * Perform autosave (called by autosave module)
+ */
+async function performAutosave(content) {
+  if (!currentFileHandle) return;
+
+  const events = getRecordedEvents();
+  if (!events || events.length === 0) return;
+
+  // Prepare document for saving
+  const endTime = Date.now();
+
+  // Create a copy of the document for saving
+  const docToSave = JSON.parse(JSON.stringify(currentDocument));
+  addSession(docToSave, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+  await finalizeDocument(docToSave, content);
+  docToSave.metadata.title = docTitle.value || 'Untitled';
+
+  // Save to vault
+  await saveFileToVault(docToSave, currentFileHandle);
+
+  // Update the current document state
+  currentDocument = docToSave;
+
+  // Start a new session
+  startNewSession(content);
+
+  // Refresh sidebar to show updated modification time
+  refreshSidebar();
+}
+
+/**
+ * Start a new session after saving
+ */
+function startNewSession(content) {
   currentSessionId = generateSessionId();
   sessionStartTime = Date.now();
-  sessionBaseContent = content; // New session starts with current content
+  sessionBaseContent = content;
   recorder.reset();
-  recorder.setBaseContent(content); // Set base content for proper change detection
+  recorder.setBaseContent(content);
   recorder.startSession();
-
-  console.log('Document saved');
+  resetAutosave(content);
 }
 
 /**
@@ -323,7 +476,59 @@ function sanitizeFilename(name) {
 }
 
 /**
- * Handle opening a .provenance file for continued editing
+ * Handle file selection from sidebar
+ */
+async function handleFileSelectFromSidebar(fileHandle, filename) {
+  // Check for unsaved changes
+  const events = getRecordedEvents();
+  if (events && events.length > 10 && !currentFileHandle) {
+    if (!confirm('You have unsaved work. Open a different document anyway?')) {
+      return;
+    }
+  }
+
+  try {
+    const { document: doc } = await openFileFromVault(fileHandle);
+
+    // Load into editor
+    currentDocument = doc;
+    currentFileHandle = fileHandle;
+    currentFilename = filename;
+    setEditorContent(doc.finalContent || '');
+    docTitle.value = doc.metadata.title || '';
+
+    // Load existing events for reference
+    const allEvents = [];
+    for (const session of doc.sessions) {
+      allEvents.push(...session.events);
+    }
+    loadExistingEvents(allEvents);
+
+    // Start new session
+    currentSessionId = generateSessionId();
+    sessionStartTime = Date.now();
+    sessionBaseContent = doc.finalContent || '';
+    recorder.reset();
+    recorder.setBaseContent(sessionBaseContent);
+    recorder.startSession();
+
+    // Reset autosave with new content
+    resetAutosave(sessionBaseContent);
+
+    // Update UI
+    updatePreview(doc.finalContent || '');
+    updateStatusBar();
+    highlightActiveFile(filename);
+
+    console.log('Document opened from sidebar');
+  } catch (err) {
+    alert('Error opening file: ' + err.message);
+    console.error(err);
+  }
+}
+
+/**
+ * Handle opening a .provenance file for continued editing (via file input)
  */
 async function handleOpenFile(event) {
   const file = event.target.files[0];
@@ -341,6 +546,8 @@ async function handleOpenFile(event) {
 
     // Load into editor
     currentDocument = doc;
+    currentFileHandle = null; // No file handle for file input
+    currentFilename = null;
     setEditorContent(doc.finalContent || '');
     docTitle.value = doc.metadata.title || '';
 
@@ -351,16 +558,21 @@ async function handleOpenFile(event) {
     }
     loadExistingEvents(allEvents);
 
-    // Start new session - base content is the existing document content
+    // Start new session
     currentSessionId = generateSessionId();
     sessionStartTime = Date.now();
-    sessionBaseContent = doc.finalContent || ''; // Session starts with existing content
+    sessionBaseContent = doc.finalContent || '';
     recorder.reset();
-    recorder.setBaseContent(sessionBaseContent); // Set base content for proper change detection
+    recorder.setBaseContent(sessionBaseContent);
     recorder.startSession();
 
+    // Reset autosave
+    resetAutosave(sessionBaseContent);
+
+    // Update UI
     updatePreview(doc.finalContent || '');
     updateStatusBar();
+    clearActiveFile();
 
     console.log('Document opened for editing');
   } catch (err) {
@@ -393,6 +605,67 @@ async function handleFileLoad(event) {
 
   // Reset file input
   event.target.value = '';
+}
+
+/**
+ * Show onboarding modal
+ */
+function showOnboardingModal() {
+  if (onboardingModal) {
+    onboardingModal.classList.remove('hidden');
+  }
+}
+
+/**
+ * Hide onboarding modal
+ */
+function hideOnboardingModal() {
+  if (onboardingModal) {
+    onboardingModal.classList.add('hidden');
+  }
+}
+
+/**
+ * Handle skip onboarding
+ */
+function handleSkipOnboarding() {
+  localStorage.setItem('provenance-visited', 'true');
+  hideOnboardingModal();
+  updateSidebarState(false);
+}
+
+/**
+ * Handle setup vault from onboarding
+ */
+async function handleSetupVault() {
+  try {
+    const handle = await showVaultPicker();
+    if (handle) {
+      localStorage.setItem('provenance-visited', 'true');
+      hideOnboardingModal();
+      updateSidebarState(true);
+    }
+  } catch (err) {
+    console.error('Vault setup failed:', err);
+  }
+}
+
+/**
+ * Show browser compatibility warning
+ */
+function showBrowserWarning() {
+  if (browserWarning) {
+    browserWarning.classList.remove('hidden');
+  }
+}
+
+/**
+ * Hide browser compatibility warning
+ */
+function hideBrowserWarning() {
+  if (browserWarning) {
+    browserWarning.classList.add('hidden');
+  }
 }
 
 // Initialize on DOM ready
