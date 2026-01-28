@@ -9,7 +9,7 @@ import { createRecorderInstance, getRecordedEvents, loadExistingEvents } from '.
 import { initViewer, loadProvenanceFile } from './viewer.js';
 import { createProvenanceDocument, addSession, finalizeDocument, serialize, parse, validate, getStatistics } from '../../core/format.js';
 import { initVault, isFileSystemAccessSupported, isVaultReady, showVaultPicker, openFileFromVault, saveFileToVault, createNewFileInVault } from './vault.js';
-import { initSidebar, updateSidebarState, refreshSidebar, highlightActiveFile, clearActiveFile } from './sidebar.js';
+import { initSidebar, updateSidebarState, refreshSidebar, highlightActiveFile, clearActiveFile, setFileListMode } from './sidebar.js';
 import { initAutosave, scheduleAutosave, resetAutosave, setSaveCallback } from './autosave.js';
 
 // State
@@ -47,9 +47,10 @@ async function init() {
   // Initialize viewer
   initViewer();
 
-  // Initialize sidebar with file select callback
+  // Initialize sidebar with file select callbacks for both modes
   initSidebar({
-    onFileSelect: handleFileSelectFromSidebar
+    onFileSelect: handleFileSelectFromSidebar,
+    onFileSelectForViewer: handleFileSelectForViewer
   });
 
   // Initialize autosave
@@ -181,11 +182,15 @@ function switchView(view) {
     viewerView.classList.remove('active');
     navEditor.classList.add('active');
     navViewer.classList.remove('active');
+    // Update sidebar to use editor file handlers
+    setFileListMode('editor');
   } else {
     editorView.classList.remove('active');
     viewerView.classList.add('active');
     navEditor.classList.remove('active');
     navViewer.classList.add('active');
+    // Update sidebar to use viewer file handlers
+    setFileListMode('viewer');
   }
 }
 
@@ -523,6 +528,26 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     console.log('Document opened from sidebar');
   } catch (err) {
     alert('Error opening file: ' + err.message);
+    console.error(err);
+  }
+}
+
+/**
+ * Handle file selection from sidebar for viewing/verification
+ */
+async function handleFileSelectForViewer(fileHandle, filename) {
+  try {
+    const { document: doc } = await openFileFromVault(fileHandle);
+
+    // Load into viewer
+    await loadProvenanceFile(doc);
+
+    // Highlight the file in sidebar
+    highlightActiveFile(filename);
+
+    console.log('Document opened in viewer from sidebar');
+  } catch (err) {
+    alert('Error opening file for viewing: ' + err.message);
     console.error(err);
   }
 }

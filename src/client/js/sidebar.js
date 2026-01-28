@@ -11,6 +11,8 @@ import { listVaultFiles, isVaultReady, showVaultPicker, requestPermission, getSt
 let isCollapsed = false;
 let currentFilename = null;
 let onFileSelectCallback = null;
+let onFileSelectForViewerCallback = null;
+let cachedFiles = []; // Cache files for re-rendering with different handlers
 
 // DOM elements
 let sidebar = null;
@@ -28,10 +30,12 @@ let btnRefreshFiles = null;
 /**
  * Initialize the sidebar
  * @param {Object} options
- * @param {Function} options.onFileSelect - Callback when file is selected
+ * @param {Function} options.onFileSelect - Callback when file is selected for editing
+ * @param {Function} options.onFileSelectForViewer - Callback when file is selected for viewing
  */
 export function initSidebar(options = {}) {
   onFileSelectCallback = options.onFileSelect;
+  onFileSelectForViewerCallback = options.onFileSelectForViewer;
 
   // Get DOM elements
   sidebar = document.getElementById('sidebar');
@@ -183,9 +187,13 @@ export async function refreshSidebar() {
 /**
  * Render the file list in the sidebar
  * @param {Array} files - Array of file info objects
+ * @param {string} mode - 'editor' or 'viewer' mode
  */
-export function renderFileList(files) {
+export function renderFileList(files, mode = 'editor') {
   if (!fileList) return;
+
+  // Cache files for potential re-rendering
+  cachedFiles = files;
 
   if (files.length === 0) {
     fileList.innerHTML = `
@@ -212,16 +220,30 @@ export function renderFileList(files) {
     </li>
   `).join('');
 
-  // Add click handlers
+  // Add click handlers based on mode
   fileList.querySelectorAll('.file-item').forEach(item => {
     item.addEventListener('click', () => {
       const filename = item.dataset.filename;
       const file = files.find(f => f.name === filename);
-      if (file && onFileSelectCallback) {
-        onFileSelectCallback(file.handle, file.name);
+      if (file) {
+        if (mode === 'viewer' && onFileSelectForViewerCallback) {
+          onFileSelectForViewerCallback(file.handle, file.name);
+        } else if (onFileSelectCallback) {
+          onFileSelectCallback(file.handle, file.name);
+        }
       }
     });
   });
+}
+
+/**
+ * Update file list click handlers for a different mode
+ * @param {string} mode - 'editor' or 'viewer'
+ */
+export function setFileListMode(mode) {
+  if (cachedFiles.length > 0) {
+    renderFileList(cachedFiles, mode);
+  }
 }
 
 /**
