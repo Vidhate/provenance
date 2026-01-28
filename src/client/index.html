@@ -7,103 +7,201 @@
   <link rel="stylesheet" href="./styles/main.css">
 </head>
 <body>
-  <div id="app">
-    <header class="header">
-      <h1 class="logo">Provenance</h1>
-      <nav class="nav">
-        <button id="nav-editor" class="nav-btn active">Write</button>
-        <button id="nav-viewer" class="nav-btn">Verify</button>
-      </nav>
-      <div class="header-actions">
-        <span id="recording-status" class="status-indicator"></span>
+  <div id="app" class="app-container">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <h2 class="sidebar-title">Vault</h2>
+        <button id="sidebar-toggle" class="sidebar-toggle-btn" aria-label="Toggle sidebar">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M4 5h12M4 10h12M4 15h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
-    </header>
 
-    <main class="main">
-      <!-- Editor View -->
-      <section id="editor-view" class="view active">
-        <div class="editor-toolbar">
-          <input type="text" id="doc-title" placeholder="Document title..." class="doc-title-input">
-          <div class="toolbar-actions">
-            <button id="btn-new" class="toolbar-btn" title="New Document">New</button>
-            <button id="btn-open" class="toolbar-btn" title="Open .provenance file">Open</button>
-            <button id="btn-save" class="toolbar-btn" title="Save .provenance file">Save</button>
+      <div class="sidebar-content">
+        <!-- Vault not configured state -->
+        <div id="vault-setup" class="vault-setup">
+          <div class="vault-setup-icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="currentColor" opacity="0.5">
+              <path d="M40 12H22l-4-4H8c-2.2 0-4 1.8-4 4v28c0 2.2 1.8 4 4 4h32c2.2 0 4-1.8 4-4V16c0-2.2-1.8-4-4-4z"/>
+            </svg>
           </div>
+          <p class="vault-setup-text">Select a folder to store your documents</p>
+          <button id="btn-select-vault" class="btn-primary">Choose Vault Folder</button>
+          <p class="vault-setup-hint">Enables auto-save and easy access</p>
         </div>
 
-        <div class="editor-container">
-          <div class="editor-pane">
-            <div class="pane-header">
-              <span>Markdown</span>
+        <!-- File list -->
+        <div id="file-list-container" class="file-list-container hidden">
+          <div class="file-list-header">
+            <span>Documents</span>
+            <button id="btn-refresh-files" class="icon-btn" title="Refresh">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.5 2.5a.5.5 0 0 1 1 0v3a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1 0-1h1.793A5.5 5.5 0 1 0 14 8a.5.5 0 0 1 1 0 6.5 6.5 0 1 1-1.5-4.207V2.5z"/>
+              </svg>
+            </button>
+          </div>
+          <ul id="file-list" class="file-list">
+            <!-- File items rendered dynamically -->
+          </ul>
+        </div>
+
+        <!-- Loading state -->
+        <div id="sidebar-loading" class="sidebar-loading hidden">
+          <div class="spinner"></div>
+          <span>Loading files...</span>
+        </div>
+
+        <!-- Error state -->
+        <div id="sidebar-error" class="sidebar-error hidden">
+          <p id="sidebar-error-message"></p>
+          <button id="btn-retry-vault" class="btn-secondary">Retry</button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="btn-change-vault" class="btn-secondary hidden">Change Vault</button>
+      </div>
+    </aside>
+
+    <!-- Main content area -->
+    <div class="main-content">
+      <header class="header">
+        <div class="header-left">
+          <button id="header-sidebar-toggle" class="header-sidebar-toggle" aria-label="Toggle sidebar">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18"/>
+            </svg>
+          </button>
+          <h1 class="logo">Provenance</h1>
+        </div>
+        <nav class="nav">
+          <button id="nav-editor" class="nav-btn active">Write</button>
+          <button id="nav-viewer" class="nav-btn">Verify</button>
+        </nav>
+        <div class="header-right">
+          <div id="autosave-indicator" class="autosave-indicator hidden">
+            <span class="autosave-status"></span>
+          </div>
+          <span id="recording-status" class="status-indicator"></span>
+        </div>
+      </header>
+
+      <main class="main">
+        <!-- Editor View -->
+        <section id="editor-view" class="view active">
+          <div class="editor-toolbar">
+            <input type="text" id="doc-title" placeholder="Document title..." class="doc-title-input">
+            <div class="toolbar-actions">
+              <button id="btn-new" class="toolbar-btn" title="New Document">New</button>
+              <button id="btn-open" class="toolbar-btn" title="Open .provenance file">Open</button>
+              <button id="btn-save" class="toolbar-btn" title="Save .provenance file">Save</button>
             </div>
-            <div id="editor"></div>
-          </div>
-          <div class="preview-pane">
-            <div class="pane-header">
-              <span>Preview</span>
-            </div>
-            <div id="preview" class="markdown-preview"></div>
-          </div>
-        </div>
-
-        <div class="editor-status-bar">
-          <span id="char-count">0 characters</span>
-          <span id="word-count">0 words</span>
-          <span id="event-count">0 events recorded</span>
-          <span id="session-time">Session: 0:00</span>
-        </div>
-      </section>
-
-      <!-- Viewer View -->
-      <section id="viewer-view" class="view">
-        <div class="viewer-toolbar">
-          <button id="btn-load-proof" class="toolbar-btn">Load .provenance file</button>
-          <div id="verification-status" class="verification-badge"></div>
-        </div>
-
-        <div id="viewer-empty" class="viewer-empty">
-          <p>Load a .provenance file to verify and replay the writing process</p>
-        </div>
-
-        <div id="viewer-content" class="viewer-content hidden">
-          <div class="viewer-info">
-            <h2 id="viewer-title">Document Title</h2>
-            <div class="viewer-stats" id="viewer-stats"></div>
           </div>
 
-          <div class="replay-container">
-            <div class="replay-controls">
-              <button id="btn-play" class="replay-btn">Play</button>
-              <button id="btn-pause" class="replay-btn">Pause</button>
-              <button id="btn-reset" class="replay-btn">Reset</button>
-              <div class="speed-control">
-                <label>Speed:</label>
-                <select id="replay-speed">
-                  <option value="1">1x</option>
-                  <option value="2">2x</option>
-                  <option value="5" selected>5x</option>
-                  <option value="10">10x</option>
-                  <option value="50">50x (skip pauses)</option>
-                </select>
+          <div class="editor-container">
+            <div class="editor-pane">
+              <div class="pane-header">
+                <span>Markdown</span>
               </div>
-              <div class="progress-container">
-                <input type="range" id="replay-progress" min="0" max="100" value="0" class="progress-slider">
-                <span id="replay-time">0:00 / 0:00</span>
+              <div id="editor"></div>
+            </div>
+            <div class="preview-pane">
+              <div class="pane-header">
+                <span>Preview</span>
               </div>
-            </div>
-
-            <div class="replay-display">
-              <div id="replay-editor" class="replay-editor"></div>
-              <div class="event-indicator" id="event-indicator"></div>
-            </div>
-
-            <div class="session-timeline" id="session-timeline">
-              <!-- Session markers will be added here -->
+              <div id="preview" class="markdown-preview"></div>
             </div>
           </div>
-        </div>
-      </section>
-    </main>
+
+          <div class="editor-status-bar">
+            <span id="char-count">0 characters</span>
+            <span id="word-count">0 words</span>
+            <span id="event-count">0 events recorded</span>
+            <span id="session-time">Session: 0:00</span>
+          </div>
+        </section>
+
+        <!-- Viewer View -->
+        <section id="viewer-view" class="view">
+          <div class="viewer-toolbar">
+            <button id="btn-load-proof" class="toolbar-btn">Load .provenance file</button>
+            <div id="verification-status" class="verification-badge"></div>
+          </div>
+
+          <div id="viewer-empty" class="viewer-empty">
+            <p>Load a .provenance file to verify and replay the writing process</p>
+          </div>
+
+          <div id="viewer-content" class="viewer-content hidden">
+            <div class="viewer-info">
+              <h2 id="viewer-title">Document Title</h2>
+              <div class="viewer-stats" id="viewer-stats"></div>
+            </div>
+
+            <div class="replay-container">
+              <div class="replay-controls">
+                <button id="btn-play" class="replay-btn">Play</button>
+                <button id="btn-pause" class="replay-btn">Pause</button>
+                <button id="btn-reset" class="replay-btn">Reset</button>
+                <div class="speed-control">
+                  <label>Speed:</label>
+                  <select id="replay-speed">
+                    <option value="1">1x</option>
+                    <option value="2">2x</option>
+                    <option value="5" selected>5x</option>
+                    <option value="10">10x</option>
+                    <option value="50">50x (skip pauses)</option>
+                  </select>
+                </div>
+                <div class="progress-container">
+                  <input type="range" id="replay-progress" min="0" max="100" value="0" class="progress-slider">
+                  <span id="replay-time">0:00 / 0:00</span>
+                </div>
+              </div>
+
+              <div class="replay-display">
+                <div id="replay-editor" class="replay-editor"></div>
+                <div class="event-indicator" id="event-indicator"></div>
+              </div>
+
+              <div class="session-timeline" id="session-timeline">
+                <!-- Session markers will be added here -->
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Onboarding Modal -->
+  <div id="onboarding-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-icon">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="currentColor">
+          <path d="M32 4C16.536 4 4 16.536 4 32s12.536 28 28 28 28-12.536 28-28S47.464 4 32 4zm0 50c-12.131 0-22-9.869-22-22s9.869-22 22-22 22 9.869 22 22-9.869 22-22 22z" opacity="0.3"/>
+          <path d="M32 14c-9.941 0-18 8.059-18 18s8.059 18 18 18 18-8.059 18-18-8.059-18-18-18zm-2 27v-6h4v6h-4zm0-10V23h4v8h-4z"/>
+        </svg>
+      </div>
+      <h2>Welcome to Provenance</h2>
+      <p>Your writing process is recorded with cryptographic proof, creating verifiable evidence that your content was written by a human.</p>
+      <p class="modal-hint">To get started, select a folder to store your documents. This enables auto-save and easy access to all your writing.</p>
+      <div class="modal-actions">
+        <button id="btn-skip-onboarding" class="btn-secondary">Skip for now</button>
+        <button id="btn-setup-vault" class="btn-primary">Choose Vault Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Browser compatibility warning -->
+  <div id="browser-warning" class="browser-warning hidden">
+    <div class="browser-warning-content">
+      <p><strong>Limited Features:</strong> Vault features require Chrome or Edge browser. You can still use Provenance with manual save/open.</p>
+      <button id="btn-dismiss-warning" class="btn-secondary">Dismiss</button>
+    </div>
   </div>
 
   <input type="file" id="file-input" accept=".provenance" style="display: none;">
