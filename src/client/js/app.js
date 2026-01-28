@@ -36,7 +36,11 @@ let workHasBegun = false;       // User has typed at least one character
 // Rename debouncing and locking
 let renameDebounceTimer = null;
 let isRenaming = false;
-const RENAME_DEBOUNCE_DELAY = 1000; // Wait 1 second after user stops typing to rename
+let lastRenamedTitle = null; // Track what title we last renamed to
+const RENAME_DEBOUNCE_DELAY = 1500; // Wait 1.5 seconds after user stops typing to rename
+
+// Flag to prevent handleEditorChange from triggering auto-create during file load
+let isLoadingDocument = false;
 
 /**
  * Initialize the application
@@ -180,10 +184,13 @@ function handleTitleChange() {
       clearTimeout(renameDebounceTimer);
     }
 
-    // Schedule rename after delay
-    renameDebounceTimer = setTimeout(() => {
-      performDebouncedRename();
-    }, RENAME_DEBOUNCE_DELAY);
+    // Schedule rename after delay - only if title has actually changed from last rename
+    const currentTitle = docTitle.value || 'Untitled';
+    if (currentTitle !== lastRenamedTitle) {
+      renameDebounceTimer = setTimeout(() => {
+        performDebouncedRename();
+      }, RENAME_DEBOUNCE_DELAY);
+    }
 
     // Schedule autosave when title changes (this is already debounced)
     scheduleAutosave(getEditorContent(), true);
@@ -202,6 +209,13 @@ async function performDebouncedRename() {
 
   // Only rename if filename would actually change
   if (!currentFilename || currentFilename === expectedFilename) {
+    // Update lastRenamedTitle even if no actual rename needed (filename already matches)
+    lastRenamedTitle = newTitle;
+    return;
+  }
+
+  // Skip if title hasn't changed from last successful rename
+  if (newTitle === lastRenamedTitle) {
     return;
   }
 
@@ -212,6 +226,7 @@ async function performDebouncedRename() {
     if (newHandle) {
       currentFileHandle = newHandle;
       currentFilename = newHandle.name;
+      lastRenamedTitle = newTitle; // Track successful rename
       highlightActiveFile(currentFilename);
       await refreshSidebar();
     }
@@ -233,6 +248,7 @@ async function autoCreateFile() {
     const title = docTitle.value || 'Untitled';
     currentFileHandle = await createNewFileInVault(currentDocument, title);
     currentFilename = currentFileHandle.name;
+    lastRenamedTitle = title; // Track the initial title to prevent spurious renames
 
     // Highlight in sidebar and refresh list
     highlightActiveFile(currentFilename);
@@ -314,6 +330,7 @@ function newDocument() {
   currentFilename = null;
   pendingAutoCreate = true; // Mark for auto-create on first content change
   workHasBegun = false; // No work yet
+  lastRenamedTitle = null; // Reset rename tracking for new document
 
   // Clear editor
   setEditorContent('');
@@ -358,6 +375,11 @@ async function handleEditorChange(content) {
 
   // Update status bar
   updateStatusBar();
+
+  // Skip auto-create logic when loading an existing document
+  if (isLoadingDocument) {
+    return;
+  }
 
   // Check if this is the first real content (work has begun)
   // We consider work to have begun if there's any content change from empty
@@ -633,12 +655,23 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
   try {
     const { document: doc } = await openFileFromVault(fileHandle);
 
-    // Load into editor
+    // Set flag to prevent handleEditorChange from triggering auto-create
+    isLoadingDocument = true;
+
+    // Set state BEFORE loading content to prevent race conditions
     currentDocument = doc;
     currentFileHandle = fileHandle;
     currentFilename = filename;
+    workHasBegun = true; // Existing document, work has already begun
+    pendingAutoCreate = false; // Already has a file
+    lastRenamedTitle = doc.metadata.title || 'Untitled'; // Track current title to prevent spurious renames
+
+    // Now load content into editor (this triggers handleEditorChange)
     setEditorContent(doc.finalContent || '');
     docTitle.value = doc.metadata.title || '';
+
+    // Clear the loading flag
+    isLoadingDocument = false;
 
     // Load existing events for reference
     const allEvents = [];
@@ -647,12 +680,10 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     }
     loadExistingEvents(allEvents);
 
-    // Start new session - work has already begun on existing documents
+    // Start new session
     currentSessionId = generateSessionId();
     sessionStartTime = Date.now();
     sessionBaseContent = doc.finalContent || '';
-    workHasBegun = true; // Existing document, work has already begun
-    pendingAutoCreate = false; // Already has a file
 
     recorder.reset();
     recorder.setBaseContent(sessionBaseContent);
@@ -670,6 +701,7 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
 
     console.log('Document opened from sidebar');
   } catch (err) {
+    isLoadingDocument = false; // Ensure flag is cleared on error
     alert('Error opening file: ' + err.message);
     console.error(err);
   }
