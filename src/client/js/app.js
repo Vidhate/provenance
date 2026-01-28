@@ -33,6 +33,11 @@ let browserWarning, btnDismissWarning;
 let pendingAutoCreate = false;  // File not yet created in vault
 let workHasBegun = false;       // User has typed at least one character
 
+// Rename debouncing and locking
+let renameDebounceTimer = null;
+let isRenaming = false;
+const RENAME_DEBOUNCE_DELAY = 1000; // Wait 1 second after user stops typing to rename
+
 /**
  * Initialize the application
  */
@@ -162,34 +167,58 @@ function setupEventListeners() {
 /**
  * Handle title input changes
  */
-async function handleTitleChange() {
+function handleTitleChange() {
   if (currentDocument) {
     currentDocument.metadata.title = docTitle.value || 'Untitled';
   }
 
-  // Rename file if we have a handle and the title changed
+  // Debounce the rename operation to avoid race conditions
+  // when user is typing quickly in the title field
   if (currentFileHandle && isVaultReady()) {
-    const newTitle = docTitle.value || 'Untitled';
-    const expectedFilename = sanitizeFilename(newTitle) + '.provenance';
-
-    // Only rename if filename would actually change
-    if (currentFilename && currentFilename !== expectedFilename) {
-      try {
-        const newHandle = await renameFileInVault(currentFileHandle, newTitle);
-        if (newHandle) {
-          currentFileHandle = newHandle;
-          currentFilename = newHandle.name;
-          highlightActiveFile(currentFilename);
-          refreshSidebar();
-        }
-      } catch (err) {
-        console.error('Error renaming file:', err);
-        // Continue with autosave even if rename fails
-      }
+    // Clear any pending rename
+    if (renameDebounceTimer) {
+      clearTimeout(renameDebounceTimer);
     }
 
-    // Schedule autosave when title changes
+    // Schedule rename after delay
+    renameDebounceTimer = setTimeout(() => {
+      performDebouncedRename();
+    }, RENAME_DEBOUNCE_DELAY);
+
+    // Schedule autosave when title changes (this is already debounced)
     scheduleAutosave(getEditorContent(), true);
+  }
+}
+
+/**
+ * Perform the actual rename after debounce delay
+ */
+async function performDebouncedRename() {
+  // Don't rename if another rename is in progress
+  if (isRenaming || !currentFileHandle) return;
+
+  const newTitle = docTitle.value || 'Untitled';
+  const expectedFilename = sanitizeFilename(newTitle) + '.provenance';
+
+  // Only rename if filename would actually change
+  if (!currentFilename || currentFilename === expectedFilename) {
+    return;
+  }
+
+  isRenaming = true;
+
+  try {
+    const newHandle = await renameFileInVault(currentFileHandle, newTitle);
+    if (newHandle) {
+      currentFileHandle = newHandle;
+      currentFilename = newHandle.name;
+      highlightActiveFile(currentFilename);
+      await refreshSidebar();
+    }
+  } catch (err) {
+    console.error('Error renaming file:', err);
+  } finally {
+    isRenaming = false;
   }
 }
 
@@ -271,6 +300,12 @@ function switchView(view) {
  * Create a new document
  */
 function newDocument() {
+  // Cancel any pending rename from previous document
+  if (renameDebounceTimer) {
+    clearTimeout(renameDebounceTimer);
+    renameDebounceTimer = null;
+  }
+
   currentDocument = createProvenanceDocument('Untitled');
   currentSessionId = generateSessionId();
   sessionStartTime = null; // Will be set when work begins
@@ -587,6 +622,12 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     if (!confirm('You have unsaved work. Open a different document anyway?')) {
       return;
     }
+  }
+
+  // Cancel any pending rename from previous document
+  if (renameDebounceTimer) {
+    clearTimeout(renameDebounceTimer);
+    renameDebounceTimer = null;
   }
 
   try {
