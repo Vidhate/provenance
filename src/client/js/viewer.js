@@ -226,6 +226,7 @@ function resetPlayback() {
   replayProgress.value = 0;
   updateTimeDisplay();
   hideEventIndicator();
+  updateActiveSessionMarker();
 }
 
 /**
@@ -321,6 +322,9 @@ function applyEvent(event) {
 
   // Scroll to bottom if content is long
   replayEditor.scrollTop = replayEditor.scrollHeight;
+
+  // Update the active session marker in the timeline
+  updateActiveSessionMarker();
 }
 
 /**
@@ -366,6 +370,7 @@ function seekToEvent(targetIndex) {
   replayEditor.textContent = replayContent;
   replayProgress.value = targetIndex;
   updateTimeDisplay();
+  updateActiveSessionMarker();
 }
 
 /**
@@ -447,4 +452,23 @@ function formatDuration(ms) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   }
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Update the active session marker based on current playback position
+ */
+function updateActiveSessionMarker() {
+  if (!currentDocument || flatEvents.length === 0) return;
+
+  // Get the current event's session ID
+  const currentEvent = flatEvents[currentEventIndex] || flatEvents[0];
+  const currentSessionId = currentEvent.sessionId;
+
+  // Find the session index
+  const sessionIndex = currentDocument.sessions.findIndex(s => s.id === currentSessionId);
+
+  // Update markers
+  document.querySelectorAll('.session-marker').forEach((marker, index) => {
+    marker.classList.toggle('active', index === sessionIndex);
+  });
 }
