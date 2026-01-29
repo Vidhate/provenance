@@ -50,29 +50,40 @@ export async function computeEventHash(event, previousHash = '') {
  * @param {Array} events - Array of events with hashes
  * @returns {Promise<{valid: boolean, brokenAt: number|null, message: string}>}
  */
-export async function verifyHashChain(events) {
+export async function verifyHashChain(events, startingHash = '') {
   if (!events || events.length === 0) {
-    return { valid: true, brokenAt: null, message: 'No events to verify' };
+    return { valid: true, brokenAt: null, message: 'No events to verify', lastHash: startingHash };
   }
 
-  let previousHash = '';
+  let previousHash = startingHash;
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i];
     const expectedHash = await computeEventHash(event, previousHash);
 
     if (event.hash !== expectedHash) {
+      console.error('Hash verification failed:', {
+        eventIndex: i,
+        eventType: event.type,
+        eventTimestamp: event.timestamp,
+        eventPosition: event.position,
+        eventContent: event.content?.substring(0, 50),
+        storedHash: event.hash,
+        expectedHash: expectedHash,
+        previousHash: previousHash
+      });
       return {
         valid: false,
         brokenAt: i,
-        message: `Hash chain broken at event ${i} (timestamp: ${event.timestamp})`
+        message: `Hash chain broken at event ${i} (type: ${event.type}, timestamp: ${event.timestamp})`,
+        lastHash: previousHash
       };
     }
 
     previousHash = event.hash;
   }
 
-  return { valid: true, brokenAt: null, message: 'Hash chain verified successfully' };
+  return { valid: true, brokenAt: null, message: 'Hash chain verified successfully', lastHash: previousHash };
 }
 
 /**
@@ -85,7 +96,9 @@ export async function verifyProvenanceFile(provenanceData) {
   let allValid = true;
 
   for (const session of provenanceData.sessions) {
-    const result = await verifyHashChain(session.events);
+    // Verify each session's hash chain independently
+    // Each session starts with an empty previousHash by design
+    const result = await verifyHashChain(session.events, '');
     results.push({
       sessionId: session.id,
       ...result

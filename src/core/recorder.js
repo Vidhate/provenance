@@ -26,49 +26,66 @@ export function createRecorder() {
   let lastHash = '';
   let isRecording = false;
   let sessionStartTime = null;
+  let pendingOperation = Promise.resolve(); // Serializes async operations
+
+  /**
+   * Queue an async operation to ensure hash chain integrity
+   * All recording operations go through this to prevent race conditions
+   */
+  function queueOperation(operation) {
+    pendingOperation = pendingOperation.then(operation).catch(err => {
+      console.error('Recorder operation failed:', err);
+      throw err;
+    });
+    return pendingOperation;
+  }
 
   return {
     /**
      * Start a new recording session
      */
     async startSession() {
-      isRecording = true;
-      sessionStartTime = Date.now();
+      return queueOperation(async () => {
+        isRecording = true;
+        sessionStartTime = Date.now();
 
-      const event = {
-        type: EventType.SESSION_START,
-        timestamp: sessionStartTime,
-        position: null,
-        content: null
-      };
+        const event = {
+          type: EventType.SESSION_START,
+          timestamp: sessionStartTime,
+          position: null,
+          content: null
+        };
 
-      event.hash = await computeEventHash(event, lastHash);
-      lastHash = event.hash;
-      events.push(event);
+        event.hash = await computeEventHash(event, lastHash);
+        lastHash = event.hash;
+        events.push(event);
 
-      return sessionStartTime;
+        return sessionStartTime;
+      });
     },
 
     /**
      * End the current recording session
      */
     async endSession() {
-      if (!isRecording) return null;
+      return queueOperation(async () => {
+        if (!isRecording) return null;
 
-      const endTime = Date.now();
-      const event = {
-        type: EventType.SESSION_END,
-        timestamp: endTime,
-        position: null,
-        content: null
-      };
+        const endTime = Date.now();
+        const event = {
+          type: EventType.SESSION_END,
+          timestamp: endTime,
+          position: null,
+          content: null
+        };
 
-      event.hash = await computeEventHash(event, lastHash);
-      lastHash = event.hash;
-      events.push(event);
+        event.hash = await computeEventHash(event, lastHash);
+        lastHash = event.hash;
+        events.push(event);
 
-      isRecording = false;
-      return endTime;
+        isRecording = false;
+        return endTime;
+      });
     },
 
     /**
@@ -77,20 +94,22 @@ export function createRecorder() {
      * @param {string} content - The content that was inserted
      */
     async recordInsert(position, content) {
-      if (!isRecording) return null;
+      return queueOperation(async () => {
+        if (!isRecording) return null;
 
-      const event = {
-        type: EventType.INSERT,
-        timestamp: Date.now(),
-        position,
-        content
-      };
+        const event = {
+          type: EventType.INSERT,
+          timestamp: Date.now(),
+          position,
+          content
+        };
 
-      event.hash = await computeEventHash(event, lastHash);
-      lastHash = event.hash;
-      events.push(event);
+        event.hash = await computeEventHash(event, lastHash);
+        lastHash = event.hash;
+        events.push(event);
 
-      return event;
+        return event;
+      });
     },
 
     /**
@@ -99,20 +118,22 @@ export function createRecorder() {
      * @param {string} content - The content that was deleted
      */
     async recordDelete(position, content) {
-      if (!isRecording) return null;
+      return queueOperation(async () => {
+        if (!isRecording) return null;
 
-      const event = {
-        type: EventType.DELETE,
-        timestamp: Date.now(),
-        position,
-        content
-      };
+        const event = {
+          type: EventType.DELETE,
+          timestamp: Date.now(),
+          position,
+          content
+        };
 
-      event.hash = await computeEventHash(event, lastHash);
-      lastHash = event.hash;
-      events.push(event);
+        event.hash = await computeEventHash(event, lastHash);
+        lastHash = event.hash;
+        events.push(event);
 
-      return event;
+        return event;
+      });
     },
 
     /**
@@ -121,20 +142,22 @@ export function createRecorder() {
      * @param {string} content - The content that was pasted
      */
     async recordPaste(position, content) {
-      if (!isRecording) return null;
+      return queueOperation(async () => {
+        if (!isRecording) return null;
 
-      const event = {
-        type: EventType.PASTE,
-        timestamp: Date.now(),
-        position,
-        content
-      };
+        const event = {
+          type: EventType.PASTE,
+          timestamp: Date.now(),
+          position,
+          content
+        };
 
-      event.hash = await computeEventHash(event, lastHash);
-      lastHash = event.hash;
-      events.push(event);
+        event.hash = await computeEventHash(event, lastHash);
+        lastHash = event.hash;
+        events.push(event);
 
-      return event;
+        return event;
+      });
     },
 
     /**
@@ -163,6 +186,8 @@ export function createRecorder() {
      * @param {Array} existingEvents - Events from a previous session
      */
     loadEvents(existingEvents) {
+      // Reset the operation queue to ensure clean state
+      pendingOperation = Promise.resolve();
       events = [...existingEvents];
       if (events.length > 0) {
         lastHash = events[events.length - 1].hash;
@@ -173,6 +198,8 @@ export function createRecorder() {
      * Clear all events (use with caution)
      */
     clear() {
+      // Reset the operation queue to ensure clean state
+      pendingOperation = Promise.resolve();
       events = [];
       lastHash = '';
       isRecording = false;
