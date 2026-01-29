@@ -406,8 +406,9 @@ async function handleEditorChange(content) {
     workHasBegun = true;
     sessionStartTime = Date.now();
 
-    // Start recording session now
-    recorder.startSession();
+    // Start recording session now - MUST await to ensure session_start hash is computed
+    // before any insert/delete events are recorded
+    await recorder.startSession();
 
     // Update UI to show recording
     recordingStatus.textContent = 'Recording';
@@ -635,13 +636,13 @@ async function performAutosave(content) {
 /**
  * Start a new session after saving
  */
-function startNewSession(content) {
+async function startNewSession(content) {
   currentSessionId = generateSessionId();
   sessionStartTime = Date.now();
   sessionBaseContent = content;
   recorder.reset();
   recorder.setBaseContent(content);
-  recorder.startSession();
+  await recorder.startSession();
   resetAutosave(content);
 }
 
@@ -705,7 +706,7 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
 
     recorder.reset();
     recorder.setBaseContent(sessionBaseContent);
-    recorder.startSession();
+    await recorder.startSession();
 
     // Reset autosave with new content
     resetAutosave(sessionBaseContent);

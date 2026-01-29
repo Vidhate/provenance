@@ -22,7 +22,6 @@ let viewerEmpty, viewerContent, viewerTitle, viewerStats;
 let verificationStatus, btnPlay, btnPause, btnReset;
 let replaySpeed, replayProgress, replayTime;
 let replayEditor, eventIndicator, sessionTimeline;
-let btnLoadProof, fileInput;
 
 /**
  * Initialize the viewer
@@ -43,11 +42,8 @@ export function initViewer() {
   replayEditor = document.getElementById('replay-editor');
   eventIndicator = document.getElementById('event-indicator');
   sessionTimeline = document.getElementById('session-timeline');
-  btnLoadProof = document.getElementById('btn-load-proof');
-  fileInput = document.getElementById('file-input');
 
   // Setup event listeners
-  btnLoadProof.addEventListener('click', () => fileInput.click());
   btnPlay.addEventListener('click', startPlayback);
   btnPause.addEventListener('click', pausePlayback);
   btnReset.addEventListener('click', resetPlayback);
