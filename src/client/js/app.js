@@ -324,7 +324,12 @@ async function handleFileDelete(fileHandle, filename) {
 /**
  * Switch between editor and viewer views
  */
-function switchView(view) {
+async function switchView(view) {
+  // If switching away from editor, close the current session (if active)
+  if (view !== 'editor' && workHasBegun) {
+    await closeCurrentSession();
+  }
+
   if (view === 'editor') {
     editorView.classList.add('active');
     viewerView.classList.remove('active');
@@ -340,6 +345,36 @@ function switchView(view) {
     // Update sidebar to use viewer file handlers
     setFileListMode('viewer');
   }
+}
+
+/**
+ * Close the current editing session
+ * Called when switching tabs or closing the document
+ */
+async function closeCurrentSession() {
+  if (!workHasBegun) return;
+
+  // End the session in the recorder
+  await recorder.endSession();
+
+  // Save the document with the completed session
+  const content = getEditorContent();
+  if (currentFileHandle) {
+    await performAutosave(content);
+  }
+
+  // Reset session state so a new session starts on next edit
+  workHasBegun = false;
+  sessionStartTime = null;
+  currentSessionId = generateSessionId(); // Prepare ID for next session
+  sessionBaseContent = content; // Current content becomes base for next session
+
+  // Reset the recorder for the next session
+  recorder.reset();
+
+  // Update UI
+  recordingStatus.textContent = 'Ready';
+  recordingStatus.classList.remove('recording');
 }
 
 /**
