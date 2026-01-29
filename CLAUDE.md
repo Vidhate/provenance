@@ -272,6 +272,8 @@ git merge fix/bug-description
 2. **Portable proof files**: Single file contains everything needed for verification
 3. **Process over output**: The proof is the journey, not the destination
 4. **Multi-session support**: Writing across days strengthens the proof
+5. **Lazy session start**: Recording only begins on first keystroke, not on page load
+6. **Vault-based workflow**: Files auto-save to a user-selected folder for seamless session resumption
 
 ### What Makes Forgery Hard
 1. **Behavioral capture**: Timing patterns, pause durations, error corrections
@@ -308,18 +310,90 @@ npm start
 
 ```
 provenance/
-├── CLAUDE.md           # This file - project context and notes
+├── claude.md           # This file - project context and notes
 ├── package.json
 ├── src/
 │   ├── server/         # Express server
+│   │   └── index.js
 │   ├── client/         # Frontend (editor + viewer)
-│   │   ├── editor/     # Markdown editor with recording
-│   │   ├── viewer/     # Replay viewer
-│   │   └── shared/     # Shared components
-│   └── core/           # Core logic
-│       ├── recorder.js # Event recording logic
-│       ├── hasher.js   # Rolling hash implementation
-│       └── format.js   # .provenance file format
-├── public/             # Static assets
-└── docs/               # User documentation
+│   │   ├── index.html  # Main HTML with sidebar + editor/viewer layout
+│   │   ├── styles/
+│   │   │   └── main.css
+│   │   └── js/
+│   │       ├── app.js          # Main application orchestrator
+│   │       ├── editor.js       # CodeMirror editor setup
+│   │       ├── editorRecorder.js # Bridges editor events to recorder
+│   │       ├── viewer.js       # Replay viewer with playback controls
+│   │       ├── vault.js        # File System Access API wrapper
+│   │       ├── sidebar.js      # Collapsible sidebar UI
+│   │       └── autosave.js     # Debounced auto-save logic
+│   └── core/           # Core logic (shared between client/server)
+│       ├── recorder.js # Event recording with hash chain
+│       ├── hasher.js   # SHA-256 rolling hash implementation
+│       └── format.js   # .provenance file format & validation
+└── public/             # Static assets
 ```
+
+## Vault System
+
+The vault is a local folder where all `.provenance` files are stored. This enables:
+- **Auto-save**: Documents save automatically after 3 seconds of inactivity
+- **Session resumption**: Click any file in the sidebar to continue editing
+- **File management**: Rename (via title field) and delete documents
+
+### Technical Implementation
+
+**File System Access API** (Chrome/Edge only):
+- Uses `showDirectoryPicker()` for vault folder selection
+- Directory handle persisted in IndexedDB for session restoration
+- Falls back to manual download for unsupported browsers
+
+**Key files:**
+- `vault.js`: File system operations (read, write, rename, delete)
+- `sidebar.js`: File list UI with click handlers for editor/viewer modes
+- `autosave.js`: Debounced save (3s delay, 30s max wait for continuous typing)
+
+### Design Decisions
+
+1. **Flat file structure**: All `.provenance` files in vault root (no subfolders)
+2. **Filename derived from title**: Sanitized to lowercase alphanumeric with underscores
+3. **Title stored in metadata**: Sidebar displays `metadata.title`, not filename
+4. **Permission re-request on reload**: Browser requires user gesture to restore access
+
+### Auto-save Flow
+
+```
+User types → handleEditorChange() → scheduleAutosave()
+                                         │
+                     3 second debounce ──┤
+                                         ▼
+                                  performAutosave()
+                                         │
+                                         ▼
+                              saveFileToVault() → .provenance file
+                                         │
+                                         ▼
+                              startNewSession() (reset recorder for next session)
+```
+
+## Hash Chain Verification
+
+Each event's hash includes the previous event's hash, creating an unbroken chain:
+
+```
+event[0].hash = SHA256(event[0] + "")
+event[1].hash = SHA256(event[1] + event[0].hash)
+event[2].hash = SHA256(event[2] + event[1].hash)
+...
+```
+
+**Critical**: `recorder.startSession()` is async and MUST be awaited before any insert/delete events. This ensures the `session_start` hash is computed first, maintaining chain integrity.
+
+## Editor/Viewer Modes
+
+The app has two views controlled by nav buttons:
+
+1. **Write (Editor)**: Create/edit documents, recording enabled
+2. **Verify (Viewer)**: Load documents from sidebar, replay writing process, see verification status
+
+When switching modes, the sidebar file click handlers update to either open for editing or open for viewing.
