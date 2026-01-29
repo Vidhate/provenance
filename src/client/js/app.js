@@ -5,7 +5,7 @@
  */
 
 import { createEditor, getEditorContent, setEditorContent } from './editor.js';
-import { createRecorderInstance, getRecordedEvents, loadExistingEvents } from './editorRecorder.js';
+import { createRecorderInstance, getRecordedEvents } from './editorRecorder.js';
 import { initViewer, loadProvenanceFile } from './viewer.js';
 import { createProvenanceDocument, addSession, finalizeDocument, serialize, parse, validate, getStatistics } from '../../core/format.js';
 import { initVault, isFileSystemAccessSupported, isVaultReady, showVaultPicker, openFileFromVault, saveFileToVault, createNewFileInVault, renameFileInVault, deleteFileFromVault } from './vault.js';
@@ -235,14 +235,26 @@ async function performDebouncedRename() {
       if (events && events.length > 0) {
         const endTime = Date.now();
         const docToSave = JSON.parse(JSON.stringify(currentDocument));
-        addSession(docToSave, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+
+        // Update existing session or add new one (same logic as autosave)
+        const existingSessionIndex = docToSave.sessions.findIndex(s => s.id === currentSessionId);
+        if (existingSessionIndex >= 0) {
+          docToSave.sessions[existingSessionIndex] = {
+            id: currentSessionId,
+            startTime: new Date(sessionStartTime).toISOString(),
+            endTime: new Date(endTime).toISOString(),
+            baseContent: sessionBaseContent,
+            events: events
+          };
+        } else {
+          addSession(docToSave, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+        }
+
         await finalizeDocument(docToSave, content);
         docToSave.metadata.title = newTitle;
         await saveFileToVault(docToSave, currentFileHandle);
         currentDocument = docToSave;
-
-        // Start a new session after save
-        startNewSession(content);
+        // Note: We do NOT start a new session here - continue the current one
       }
 
       highlightActiveFile(currentFilename);
@@ -386,6 +398,10 @@ function confirmNewDocument() {
 
 /**
  * Handle editor content changes
+ *
+ * This is called whenever the editor content changes. It detects the first
+ * actual edit (when content differs from sessionBaseContent) and starts
+ * the recording session at that point.
  */
 async function handleEditorChange(content) {
   // Update preview
@@ -394,15 +410,16 @@ async function handleEditorChange(content) {
   // Update status bar
   updateStatusBar();
 
-  // Skip auto-create logic when loading an existing document
+  // Skip session logic when loading an existing document
   if (isLoadingDocument) {
     return;
   }
 
-  // Check if this is the first real content (work has begun)
-  // We consider work to have begun if there's any content change from empty
-  // This happens on first keystroke
-  if (!workHasBegun && content.length > 0) {
+  // Check if this is the first real edit (work has begun)
+  // We consider work to have begun if content has changed from the base content
+  // For new documents, sessionBaseContent is '' so any content means work began
+  // For existing documents, content must differ from the loaded content
+  if (!workHasBegun && content !== sessionBaseContent) {
     workHasBegun = true;
     sessionStartTime = Date.now();
 
@@ -414,7 +431,7 @@ async function handleEditorChange(content) {
     recordingStatus.textContent = 'Recording';
     recordingStatus.classList.add('recording');
 
-    // Auto-create file in vault if ready
+    // Auto-create file in vault if ready (only for new documents)
     if (pendingAutoCreate && isVaultReady()) {
       pendingAutoCreate = false;
       await autoCreateFile();
@@ -536,6 +553,9 @@ function generateSessionId() {
 /**
  * Save the current document
  * Uses vault if available, otherwise falls back to download
+ *
+ * Note: Manual save also does NOT create a new session - it updates the current one.
+ * A session only ends when the user closes the file or opens a different one.
  */
 async function saveDocument() {
   const content = getEditorContent();
@@ -546,9 +566,25 @@ async function saveDocument() {
     return;
   }
 
-  // Prepare document for saving
+  // Prepare document for saving - update existing session or add new one
   const endTime = Date.now();
-  addSession(currentDocument, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+
+  // Check if we're updating an existing session or adding a new one
+  const existingSessionIndex = currentDocument.sessions.findIndex(s => s.id === currentSessionId);
+  if (existingSessionIndex >= 0) {
+    // Update existing session
+    currentDocument.sessions[existingSessionIndex] = {
+      id: currentSessionId,
+      startTime: new Date(sessionStartTime).toISOString(),
+      endTime: new Date(endTime).toISOString(),
+      baseContent: sessionBaseContent,
+      events: events
+    };
+  } else {
+    // First save of this session
+    addSession(currentDocument, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+  }
+
   await finalizeDocument(currentDocument, content);
   currentDocument.metadata.title = docTitle.value || 'Untitled';
 
@@ -579,8 +615,7 @@ async function saveDocument() {
     downloadDocument();
   }
 
-  // Start a new session (continuing the document)
-  startNewSession(content);
+  // Note: We do NOT start a new session - continue the current one
 }
 
 /**
@@ -603,6 +638,11 @@ function downloadDocument() {
 
 /**
  * Perform autosave (called by autosave module)
+ *
+ * IMPORTANT: Autosave does NOT create a new session. It saves the current
+ * session's progress so far. A session represents a single "sitting" - from
+ * when the user opens a file and starts editing to when they close it or
+ * open a different file.
  */
 async function performAutosave(content) {
   // Don't save if no file handle or work hasn't begun
@@ -611,39 +651,40 @@ async function performAutosave(content) {
   const events = getRecordedEvents();
   if (!events || events.length === 0) return;
 
-  // Prepare document for saving
+  // Prepare document for saving - update the current session, don't create new one
   const endTime = Date.now();
 
   // Create a copy of the document for saving
   const docToSave = JSON.parse(JSON.stringify(currentDocument));
-  addSession(docToSave, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+
+  // Check if we're updating an existing session or adding a new one
+  const existingSessionIndex = docToSave.sessions.findIndex(s => s.id === currentSessionId);
+
+  if (existingSessionIndex >= 0) {
+    // Update existing session with latest events and end time
+    docToSave.sessions[existingSessionIndex] = {
+      id: currentSessionId,
+      startTime: new Date(sessionStartTime).toISOString(),
+      endTime: new Date(endTime).toISOString(),
+      baseContent: sessionBaseContent,
+      events: events
+    };
+  } else {
+    // First save of this session - add it
+    addSession(docToSave, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+  }
+
   await finalizeDocument(docToSave, content);
   docToSave.metadata.title = docTitle.value || 'Untitled';
 
   // Save to vault
   await saveFileToVault(docToSave, currentFileHandle);
 
-  // Update the current document state
+  // Update the current document state (but DON'T start a new session!)
   currentDocument = docToSave;
-
-  // Start a new session
-  startNewSession(content);
 
   // Refresh sidebar to show updated modification time
   refreshSidebar();
-}
-
-/**
- * Start a new session after saving
- */
-async function startNewSession(content) {
-  currentSessionId = generateSessionId();
-  sessionStartTime = Date.now();
-  sessionBaseContent = content;
-  recorder.reset();
-  recorder.setBaseContent(content);
-  await recorder.startSession();
-  resetAutosave(content);
 }
 
 /**
@@ -655,6 +696,10 @@ function sanitizeFilename(name) {
 
 /**
  * Handle file selection from sidebar
+ *
+ * IMPORTANT: Opening a file does NOT immediately start a session. A session
+ * only begins when the user makes their first edit. This ensures that simply
+ * viewing a file doesn't create empty sessions.
  */
 async function handleFileSelectFromSidebar(fileHandle, filename) {
   // Check for unsaved changes
@@ -681,7 +726,7 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     currentDocument = doc;
     currentFileHandle = fileHandle;
     currentFilename = filename;
-    workHasBegun = true; // Existing document, work has already begun
+    workHasBegun = false; // Session hasn't started yet - will start on first edit
     pendingAutoCreate = false; // Already has a file
     lastRenamedTitle = doc.metadata.title || 'Untitled'; // Track current title to prevent spurious renames
 
@@ -692,21 +737,16 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     // Clear the loading flag
     isLoadingDocument = false;
 
-    // Load existing events for reference
-    const allEvents = [];
-    for (const session of doc.sessions) {
-      allEvents.push(...session.events);
-    }
-    loadExistingEvents(allEvents);
-
-    // Start new session
+    // Prepare for a potential new session (will start on first edit)
     currentSessionId = generateSessionId();
-    sessionStartTime = Date.now();
+    sessionStartTime = null; // Will be set when work begins
     sessionBaseContent = doc.finalContent || '';
 
+    // Reset recorder but DON'T start session yet - wait for first edit
     recorder.reset();
     recorder.setBaseContent(sessionBaseContent);
-    await recorder.startSession();
+    // Note: recorder.startSession() is NOT called here - it will be called
+    // in handleEditorChange when the user makes their first edit
 
     // Reset autosave with new content
     resetAutosave(sessionBaseContent);
@@ -715,10 +755,10 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     updatePreview(doc.finalContent || '');
     updateStatusBar();
     highlightActiveFile(filename);
-    recordingStatus.textContent = 'Recording';
-    recordingStatus.classList.add('recording');
+    recordingStatus.textContent = 'Ready';
+    recordingStatus.classList.remove('recording');
 
-    console.log('Document opened from sidebar');
+    console.log('Document opened from sidebar (session will start on first edit)');
   } catch (err) {
     isLoadingDocument = false; // Ensure flag is cleared on error
     alert('Error opening file: ' + err.message);
