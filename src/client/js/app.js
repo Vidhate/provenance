@@ -227,6 +227,24 @@ async function performDebouncedRename() {
       currentFileHandle = newHandle;
       currentFilename = newHandle.name;
       lastRenamedTitle = newTitle; // Track successful rename
+
+      // Also save the document with the updated title so sidebar shows correct name
+      // The sidebar reads title from file's internal metadata, not filename
+      const content = getEditorContent();
+      const events = getRecordedEvents();
+      if (events && events.length > 0) {
+        const endTime = Date.now();
+        const docToSave = JSON.parse(JSON.stringify(currentDocument));
+        addSession(docToSave, currentSessionId, sessionStartTime, endTime, events, sessionBaseContent);
+        await finalizeDocument(docToSave, content);
+        docToSave.metadata.title = newTitle;
+        await saveFileToVault(docToSave, currentFileHandle);
+        currentDocument = docToSave;
+
+        // Start a new session after save
+        startNewSession(content);
+      }
+
       highlightActiveFile(currentFilename);
       await refreshSidebar();
     }

@@ -299,7 +299,9 @@ export async function openFileFromVault(fileHandle) {
 export async function saveFileToVault(document, fileHandle) {
   const json = JSON.stringify(document, null, 2);
 
-  const writable = await fileHandle.createWritable();
+  // Use keepExistingData: false to avoid creating .crswap temp files
+  // This writes directly to the file instead of using a swap file
+  const writable = await fileHandle.createWritable({ keepExistingData: false });
   await writable.write(json);
   await writable.close();
 }
@@ -388,7 +390,8 @@ export async function renameFileInVault(oldHandle, newTitle) {
 
   // Create new file with new name
   const newHandle = await directoryHandle.getFileHandle(finalFilename, { create: true });
-  const writable = await newHandle.createWritable();
+  // Use keepExistingData: false to avoid creating .crswap temp files
+  const writable = await newHandle.createWritable({ keepExistingData: false });
   await writable.write(content);
   await writable.close();
 
