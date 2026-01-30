@@ -8,7 +8,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node src/server/index.js"
+    "start": "node src/server/index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "writing",
@@ -25,6 +28,8 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "vite": "^5.0.0"
+    "jsdom": "^27.4.0",
+    "vite": "^5.0.0",
+    "vitest": "^4.0.18"
   }
 }
