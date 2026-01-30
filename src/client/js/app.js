@@ -10,7 +10,7 @@ import { initViewer, loadProvenanceFile } from './viewer.js';
 import { createProvenanceDocument, addSession, finalizeDocument, serialize, parse, validate, getStatistics } from '../../core/format.js';
 import { initVault, isFileSystemAccessSupported, isVaultReady, showVaultPicker, openFileFromVault, saveFileToVault, createNewFileInVault, renameFileInVault, deleteFileFromVault } from './vault.js';
 import { initSidebar, updateSidebarState, refreshSidebar, highlightActiveFile, clearActiveFile, setFileListMode } from './sidebar.js';
-import { initAutosave, scheduleAutosave, resetAutosave, setSaveCallback } from './autosave.js';
+import { initAutosave, scheduleAutosave, resetAutosave, setSaveCallback, flushAndWait, hasPendingSave } from './autosave.js';
 
 // State
 let currentDocument = null;
@@ -325,8 +325,10 @@ async function handleFileDelete(fileHandle, filename) {
  * Switch between editor and viewer views
  */
 async function switchView(view) {
-  // If switching away from editor, close the current session (if active)
+  // If switching away from editor, flush pending saves and close the current session
   if (view !== 'editor' && workHasBegun) {
+    // Ensure all pending changes are saved before switching
+    await flushAndWait();
     await closeCurrentSession();
   }
 
@@ -421,13 +423,19 @@ function newDocument() {
 /**
  * Confirm before creating new document
  */
-function confirmNewDocument() {
+async function confirmNewDocument() {
   const events = getRecordedEvents();
   if (events && events.length > 10 && !currentFileHandle) {
     if (!confirm('You have unsaved work. Create a new document anyway?')) {
       return;
     }
   }
+
+  // Flush any pending saves from the current document before creating new one
+  if (currentFileHandle && workHasBegun) {
+    await flushAndWait();
+  }
+
   newDocument();
 }
 
@@ -737,12 +745,18 @@ function sanitizeFilename(name) {
  * viewing a file doesn't create empty sessions.
  */
 async function handleFileSelectFromSidebar(fileHandle, filename) {
-  // Check for unsaved changes
+  // Check for unsaved changes (only for documents without a file handle - truly unsaved)
   const events = getRecordedEvents();
   if (events && events.length > 10 && !currentFileHandle) {
     if (!confirm('You have unsaved work. Open a different document anyway?')) {
       return;
     }
+  }
+
+  // Flush any pending saves from the current document before switching
+  // This ensures no data loss when switching documents quickly
+  if (currentFileHandle && workHasBegun) {
+    await flushAndWait();
   }
 
   // Cancel any pending rename from previous document
@@ -806,6 +820,12 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
  */
 async function handleFileSelectForViewer(fileHandle, filename) {
   try {
+    // If viewing the currently edited file, ensure all changes are saved first
+    // This prevents showing stale content in the replay
+    if (currentFileHandle && currentFilename === filename && workHasBegun) {
+      await flushAndWait();
+    }
+
     const { document: doc } = await openFileFromVault(fileHandle);
 
     // Load into viewer

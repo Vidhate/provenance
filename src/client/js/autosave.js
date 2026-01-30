@@ -1,28 +1,30 @@
 /**
- * Autosave module - Debounced automatic saving
+ * Autosave module - Interval-based automatic saving
  *
- * Manages automatic saving of documents with debouncing
- * to prevent excessive writes while ensuring data is saved.
+ * Manages automatic saving of documents using a periodic interval
+ * approach (similar to Obsidian) to ensure data is saved frequently
+ * without excessive writes. Saves every 2 seconds while changes exist.
  */
 
 // Configuration
 const CONFIG = {
-  DEBOUNCE_DELAY: 3000,      // 3 seconds after last keystroke
-  MAX_WAIT_TIME: 30000,      // Force save after 30 seconds of continuous typing
+  SAVE_INTERVAL: 2000,       // Save every 2 seconds while dirty
   RETRY_DELAY: 5000,         // Retry delay on failure
   MAX_RETRIES: 3             // Maximum retry attempts
 };
 
 // State
-let debounceTimer = null;
-let maxWaitTimer = null;
+let intervalTimer = null;
 let isDirtyFlag = false;
 let retryCount = 0;
 let isAutoSaving = false;
 let saveCallback = null;
 let lastSavedContent = '';
+let pendingContent = null;   // Content waiting to be saved
+let savePromise = null;      // Track in-flight save operation
 
-// DOM element for indicator
+// DOM element for indicator (removed from UI - autosave is now seamless)
+// Keeping the variable and functions for potential future debugging use
 let autosaveIndicator = null;
 
 /**
@@ -48,6 +50,31 @@ export function setSaveCallback(callback) {
 }
 
 /**
+ * Start the autosave interval timer
+ * Called once when autosave is initialized or after reset
+ */
+function startAutosaveInterval() {
+  if (intervalTimer) return; // Already running
+
+  intervalTimer = setInterval(async () => {
+    // Only save if dirty and we have pending content
+    if (isDirtyFlag && pendingContent !== null && pendingContent !== lastSavedContent) {
+      await performAutosave(pendingContent);
+    }
+  }, CONFIG.SAVE_INTERVAL);
+}
+
+/**
+ * Stop the autosave interval timer
+ */
+function stopAutosaveInterval() {
+  if (intervalTimer) {
+    clearInterval(intervalTimer);
+    intervalTimer = null;
+  }
+}
+
+/**
  * Schedule an autosave (call this on content change)
  * @param {string} currentContent - Current editor content
  * @param {boolean} hasFileHandle - Whether there's an active file handle
@@ -58,62 +85,56 @@ export function scheduleAutosave(currentContent, hasFileHandle) {
     return;
   }
 
-  // Check if content actually changed
+  // Check if content actually changed from last saved
   if (currentContent === lastSavedContent) {
     return;
   }
 
+  // Store the pending content for the next interval tick
+  pendingContent = currentContent;
+
   // Mark as dirty
   markDirty();
 
-  // Clear existing debounce timer
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-  }
-
-  // Start max wait timer if not already running
-  if (!maxWaitTimer) {
-    maxWaitTimer = setTimeout(async () => {
-      await performAutosave(currentContent);
-      maxWaitTimer = null;
-    }, CONFIG.MAX_WAIT_TIME);
-  }
-
-  // Set debounce timer
-  debounceTimer = setTimeout(async () => {
-    await performAutosave(currentContent);
-
-    // Clear max wait timer after successful save
-    if (maxWaitTimer) {
-      clearTimeout(maxWaitTimer);
-      maxWaitTimer = null;
-    }
-  }, CONFIG.DEBOUNCE_DELAY);
+  // Ensure interval is running
+  startAutosaveInterval();
 }
 
 /**
  * Perform the autosave operation
  * @param {string} content - Content to save
+ * @returns {Promise<boolean>} - Whether save was successful
  */
 async function performAutosave(content) {
-  if (isAutoSaving || !saveCallback) return;
+  if (isAutoSaving || !saveCallback) return false;
 
   // Check if content actually changed
   if (content === lastSavedContent) {
     markClean();
-    return;
+    return true;
   }
 
   isAutoSaving = true;
   updateIndicator('saving');
+
+  // Create a promise that external code can await
+  let resolvePromise;
+  savePromise = new Promise(resolve => {
+    resolvePromise = resolve;
+  });
 
   try {
     await saveCallback(content);
 
     // Update state on success
     lastSavedContent = content;
+    // Only clear pendingContent if it's the same as what we just saved
+    // New content may have been scheduled during the save
+    if (pendingContent === content) {
+      pendingContent = null;
+      markClean();
+    }
     retryCount = 0;
-    markClean();
     updateIndicator('saved');
 
     // Hide "saved" indicator after a delay
@@ -122,6 +143,9 @@ async function performAutosave(content) {
         updateIndicator('hidden');
       }
     }, 2000);
+
+    resolvePromise(true);
+    return true;
 
   } catch (error) {
     console.error('Autosave failed:', error);
@@ -132,24 +156,22 @@ async function performAutosave(content) {
       retryCount++;
       setTimeout(() => performAutosave(content), CONFIG.RETRY_DELAY);
     }
+
+    resolvePromise(false);
+    return false;
   } finally {
     isAutoSaving = false;
+    savePromise = null;
   }
 }
 
 /**
- * Cancel pending autosave
+ * Cancel pending autosave interval
+ * Note: This does NOT cancel an in-flight save - use flushAndWait for that
  */
 export function cancelAutosave() {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-
-  if (maxWaitTimer) {
-    clearTimeout(maxWaitTimer);
-    maxWaitTimer = null;
-  }
+  stopAutosaveInterval();
+  pendingContent = null;
 }
 
 /**
@@ -181,9 +203,11 @@ export function isDirty() {
 export function resetAutosave(content = '') {
   cancelAutosave();
   lastSavedContent = content;
+  pendingContent = null;
   isDirtyFlag = false;
   retryCount = 0;
   isAutoSaving = false;
+  savePromise = null;
   updateIndicator('hidden');
 }
 
@@ -229,12 +253,40 @@ function updateIndicator(state, message = '') {
 }
 
 /**
- * Force an immediate save (bypass debounce)
+ * Force an immediate save (bypass interval)
  * @param {string} content - Content to save
+ * @returns {Promise<boolean>} - Whether save was successful
  */
 export async function forceSave(content) {
-  cancelAutosave();
-  await performAutosave(content);
+  // Don't cancel interval, just do an immediate save
+  return await performAutosave(content);
+}
+
+/**
+ * Flush any pending changes and wait for completion
+ * Use this before switching documents to ensure no data loss
+ * @returns {Promise<boolean>} - Whether save was successful (or no save needed)
+ */
+export async function flushAndWait() {
+  // If there's an in-flight save, wait for it
+  if (savePromise) {
+    await savePromise;
+  }
+
+  // If there's pending content that differs from saved, save it now
+  if (pendingContent !== null && pendingContent !== lastSavedContent) {
+    return await performAutosave(pendingContent);
+  }
+
+  return true;
+}
+
+/**
+ * Check if there are pending saves (dirty state or in-flight save)
+ * @returns {boolean}
+ */
+export function hasPendingSave() {
+  return isDirtyFlag || isAutoSaving || savePromise !== null;
 }
 
 /**
