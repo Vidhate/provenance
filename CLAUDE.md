@@ -304,14 +304,23 @@ npm run build
 
 # Run production server
 npm start
+
+# Run tests
+npm test              # Watch mode
+npm run test:run      # Single run
+npm run test:coverage # With coverage
 ```
 
 ## Project Structure
 
 ```
 provenance/
-├── claude.md           # This file - project context and notes
+├── CLAUDE.md           # This file - project context and notes
 ├── package.json
+├── vitest.config.js    # Test configuration
+├── tests/              # Test suite
+│   ├── setup.js        # Test environment setup
+│   └── autosave.test.js # Autosave module tests
 ├── src/
 │   ├── server/         # Express server
 │   │   └── index.js
@@ -326,7 +335,7 @@ provenance/
 │   │       ├── viewer.js       # Replay viewer with playback controls
 │   │       ├── vault.js        # File System Access API wrapper
 │   │       ├── sidebar.js      # Collapsible sidebar UI
-│   │       └── autosave.js     # Debounced auto-save logic
+│   │       └── autosave.js     # Interval-based auto-save logic
 │   └── core/           # Core logic (shared between client/server)
 │       ├── recorder.js # Event recording with hash chain
 │       ├── hasher.js   # SHA-256 rolling hash implementation
@@ -337,7 +346,7 @@ provenance/
 ## Vault System
 
 The vault is a local folder where all `.provenance` files are stored. This enables:
-- **Auto-save**: Documents save automatically after 3 seconds of inactivity
+- **Auto-save**: Documents save automatically every 2 seconds while editing
 - **Session resumption**: Click any file in the sidebar to continue editing
 - **File management**: Rename (via title field) and delete documents
 
@@ -351,7 +360,7 @@ The vault is a local folder where all `.provenance` files are stored. This enabl
 **Key files:**
 - `vault.js`: File system operations (read, write, rename, delete)
 - `sidebar.js`: File list UI with click handlers for editor/viewer modes
-- `autosave.js`: Debounced save (3s delay, 30s max wait for continuous typing)
+- `autosave.js`: Interval-based save (every 2s while dirty)
 
 ### Design Decisions
 
@@ -360,18 +369,33 @@ The vault is a local folder where all `.provenance` files are stored. This enabl
 3. **Title stored in metadata**: Sidebar displays `metadata.title`, not filename
 4. **Permission re-request on reload**: Browser requires user gesture to restore access
 
-### Auto-save Flow
+### Auto-save Architecture
+
+The autosave system uses an **interval-based approach** (similar to Obsidian) rather than debouncing:
 
 ```
 User types → handleEditorChange() → scheduleAutosave()
                                          │
-                     3 second debounce ──┤
                                          ▼
-                                  performAutosave()
+                              pendingContent = content
+                              Start 2s interval timer (if not running)
+                                         │
+                     Every 2 seconds ────┤
+                                         ▼
+                              if (dirty && pendingContent differs from lastSaved)
+                                  → performAutosave()
                                          │
                                          ▼
                               saveFileToVault() → .provenance file
 ```
+
+**Key behaviors:**
+- Saves every 2 seconds while there are unsaved changes
+- `flushAndWait()` forces immediate save and waits for completion
+- Always called before switching documents to prevent data loss
+- Content scheduled during an in-flight save is preserved (not overwritten)
+
+**Critical for data integrity:** When switching documents, opening files in verify mode, or creating new documents, `flushAndWait()` is called to ensure all pending changes are persisted before the switch occurs.
 
 **Important**: Autosave updates the current session in place - it does NOT create a new session. Sessions persist across autosaves until explicitly closed.
 
@@ -416,3 +440,54 @@ A session represents a single "sitting" - continuous work on a document. Underst
 - Manual save also updates the current session, not creating a new one
 - Each session stores `baseContent` - the content that existed when the session started
 - Multi-session documents chain correctly: session N's base content = session N-1's final content
+
+## Testing
+
+The project uses **Vitest** for testing with **jsdom** for DOM simulation.
+
+### Test Structure
+
+```
+tests/
+├── setup.js           # Global test setup (fake timers, DOM mocks)
+└── autosave.test.js   # Autosave module tests (32 tests)
+```
+
+### Running Tests
+
+```bash
+npm test              # Watch mode - re-runs on file changes
+npm run test:run      # Single run
+npm run test:coverage # With coverage report
+```
+
+### Writing Tests
+
+Tests use fake timers to control `setInterval`/`setTimeout`:
+
+```javascript
+import { vi, beforeEach, afterEach } from 'vitest';
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+// Advance time in tests
+await vi.advanceTimersByTimeAsync(2000); // Advance 2 seconds
+```
+
+### Test Coverage Areas
+
+Current test coverage focuses on:
+- **Autosave module**: Interval-based saving, flush behavior, error handling, document switching scenarios
+
+Future tests should cover:
+- Hash chain integrity
+- Session lifecycle
+- Recorder event handling
+- Viewer replay accuracy
