@@ -371,10 +371,9 @@ User types → handleEditorChange() → scheduleAutosave()
                                          │
                                          ▼
                               saveFileToVault() → .provenance file
-                                         │
-                                         ▼
-                              startNewSession() (reset recorder for next session)
 ```
+
+**Important**: Autosave updates the current session in place - it does NOT create a new session. Sessions persist across autosaves until explicitly closed.
 
 ## Hash Chain Verification
 
@@ -387,7 +386,7 @@ event[2].hash = SHA256(event[2] + event[1].hash)
 ...
 ```
 
-**Critical**: `recorder.startSession()` is async and MUST be awaited before any insert/delete events. This ensures the `session_start` hash is computed first, maintaining chain integrity.
+**Critical**: All recorder operations (`startSession`, `endSession`, `recordInsert`, etc.) are async and use an internal operation queue to prevent race conditions. This ensures hash chain integrity even when multiple events fire in rapid succession.
 
 ## Editor/Viewer Modes
 
@@ -397,3 +396,23 @@ The app has two views controlled by nav buttons:
 2. **Verify (Viewer)**: Load documents from sidebar, replay writing process, see verification status
 
 When switching modes, the sidebar file click handlers update to either open for editing or open for viewing.
+
+## Session Lifecycle
+
+A session represents a single "sitting" - continuous work on a document. Understanding when sessions start and end is crucial:
+
+### When Sessions Start
+- **NOT** when opening a file (opening just loads the document)
+- **Only** when the user makes their first actual edit (content differs from loaded content)
+- This prevents empty sessions from being created when just viewing files
+
+### When Sessions End
+- When switching from Write tab to Verify tab
+- When opening a different document from the sidebar
+- When creating a new document
+
+### Session Behavior
+- Autosave updates the current session in place (same session ID, updated end time and events)
+- Manual save also updates the current session, not creating a new one
+- Each session stores `baseContent` - the content that existed when the session started
+- Multi-session documents chain correctly: session N's base content = session N-1's final content
