@@ -436,6 +436,83 @@ describe('pasteRatioAnalyzer — composed vs imported classification', () => {
     expect(result.pasteRatio).toBe(1.0);
   });
 
+  it('should preserve imported classification across sessions', () => {
+    // Session 1: type "abc", paste "XYZ" (imported)
+    // Session 2: baseContent = "abcXYZ", paste "XYZ" again
+    // The original "XYZ" from session 1 should STILL be imported,
+    // and the new paste of "XYZ" will match content → composed
+    // Final: "abcXYZXYZ" → abc=composed(3), XYZ=imported(3), XYZ=composed(3)
+    const doc = buildDoc([
+      {
+        baseContent: '',
+        events: [
+          sessionStartEv(),
+          insertEv(0, 'abc'),
+          pasteEv(3, 'XYZ'),           // not in content or deletedContent → imported
+          sessionEndEv()
+        ]
+      },
+      {
+        baseContent: 'abcXYZ',
+        events: [
+          sessionStartEv(),
+          pasteEv(6, 'XYZ')            // "XYZ" found in content (baseContent) → composed
+        ]
+      }
+    ]);
+
+    const result = pasteRatioAnalyzer(doc);
+
+    // The original "XYZ" from session 1 must stay imported (3 chars)
+    expect(result.importedCharCount).toBe(3);
+    // "abc" (3 composed) + "XYZ" original (3 imported) + "XYZ" re-pasted (3 composed) = 9 total
+    expect(result.composedCharCount).toBe(6);
+    expect(result.totalCharCount).toBe(9);
+    expect(result.pasteRatio).toBeCloseTo(3 / 9);
+  });
+
+  it('should preserve imported classification when same text is pasted multiple times across sessions', () => {
+    // Reproduces the exact bug: import text in session 1, paste it 4 more times in session 2
+    // Session 1: type "Hello\n", paste "External content" (imported)
+    // Session 2: baseContent = "Hello\nExternal content", paste "External content" 4 more times
+    // The original "External content" should stay imported, re-pastes are composed (found in content)
+    const pastedText = 'External content that I have pasted';
+    const doc = buildDoc([
+      {
+        baseContent: '',
+        events: [
+          sessionStartEv(),
+          insertEv(0, 'Hello\n'),
+          pasteEv(6, pastedText),
+          sessionEndEv()
+        ]
+      },
+      {
+        baseContent: 'Hello\n' + pastedText,
+        events: [
+          sessionStartEv(),
+          insertEv(6 + pastedText.length, '\n'),
+          pasteEv(6 + pastedText.length + 1, pastedText),
+          insertEv(6 + pastedText.length * 2 + 1, '\n'),
+          pasteEv(6 + pastedText.length * 2 + 2, pastedText),
+          insertEv(6 + pastedText.length * 3 + 2, '\n'),
+          pasteEv(6 + pastedText.length * 3 + 3, pastedText),
+          insertEv(6 + pastedText.length * 4 + 3, '\n'),
+          pasteEv(6 + pastedText.length * 4 + 4, pastedText),
+          sessionEndEv()
+        ]
+      }
+    ]);
+
+    const result = pasteRatioAnalyzer(doc);
+
+    // Only the FIRST paste (from session 1) is imported — the other 4 match content → composed
+    expect(result.importedCharCount).toBe(pastedText.length);  // 35
+    // "Hello\n" (6) + 4 newlines (4) + 4 re-pastes (4*35=140) = 150 composed
+    expect(result.composedCharCount).toBe(6 + 4 + pastedText.length * 4);
+    expect(result.pasteRatio).toBeCloseTo(pastedText.length / (6 + 4 + pastedText.length * 5));
+  });
+
   it('should correctly handle mixed internal and external pastes in same session', () => {
     // Type "abc", cut "abc", paste "abc" (internal), paste "XYZ" (external)
     // Final: "abcXYZ" → abc=composed, XYZ=imported → 3/6 imported
