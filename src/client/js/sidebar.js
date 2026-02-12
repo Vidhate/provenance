@@ -137,20 +137,25 @@ export function collapseSidebar() {
  */
 async function handleVaultSetup() {
   try {
-    showLoading();
+    // IMPORTANT: Call showVaultPicker() FIRST, before any async operations or UI updates
+    // The File System Access API requires the picker to be called synchronously
+    // within the user gesture (click) event handler. Any await or DOM manipulation
+    // before this call can break the user gesture chain.
     const handle = await showVaultPicker();
 
     if (handle) {
+      showLoading();
       await refreshSidebar();
       updateSidebarState(true);
+      hideLoading();
     } else {
       // User cancelled
-      hideLoading();
       if (!isVaultReady()) {
         updateSidebarState(false);
       }
     }
   } catch (err) {
+    hideLoading();
     showError('Failed to select vault folder: ' + err.message);
   }
 }
