@@ -334,8 +334,13 @@ function applyEvent(event) {
     case 'session_start':
       // Initialize content to session's base content (for multi-session documents)
       if (event.sessionBaseContent) {
-        replayContent = event.sessionBaseContent;
-        replayOrigins = new Array(event.sessionBaseContent.length).fill('composed');
+        // Preserve existing origins if they match (carries forward imported markers from prior sessions)
+        if (replayContent === event.sessionBaseContent && replayOrigins.length === event.sessionBaseContent.length && replayOrigins.length > 0) {
+          // Keep existing replayOrigins — they reflect prior session replay
+        } else {
+          replayContent = event.sessionBaseContent;
+          replayOrigins = new Array(event.sessionBaseContent.length).fill('composed');
+        }
         replayDeletedContent = '';
       }
       showEventIndicator('Session started', 'session');
@@ -373,8 +378,13 @@ function seekToEvent(targetIndex) {
       case 'session_start':
         // Initialize content to session's base content (for multi-session documents)
         if (event.sessionBaseContent) {
-          replayContent = event.sessionBaseContent;
-          replayOrigins = new Array(event.sessionBaseContent.length).fill('composed');
+          // Preserve existing origins if they match (carries forward imported markers from prior sessions)
+          if (replayContent === event.sessionBaseContent && replayOrigins.length === event.sessionBaseContent.length && replayOrigins.length > 0) {
+            // Keep existing replayOrigins — they reflect prior session replay
+          } else {
+            replayContent = event.sessionBaseContent;
+            replayOrigins = new Array(event.sessionBaseContent.length).fill('composed');
+          }
           replayDeletedContent = '';
         }
         break;
