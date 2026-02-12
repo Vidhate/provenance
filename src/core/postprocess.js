@@ -8,7 +8,7 @@
  * Usage:
  *   import { runPostProcessing } from './postprocess.js';
  *   const results = runPostProcessing(doc);
- *   // results.pasteRatio => { pasteRatio, pastedCharCount, typedCharCount, totalCharCount }
+ *   // results.pasteRatio => { pasteRatio, importedCharCount, composedCharCount, totalCharCount }
  *
  * Adding a new analyzer:
  *   import { registerAnalyzer } from './postprocess.js';
@@ -62,66 +62,88 @@ export function runPostProcessing(document) {
 }
 
 // ---------------------------------------------------------------------------
-// Built-in analyzer: character-level paste ratio
+// Built-in analyzer: character-level paste ratio (composed vs imported)
 // ---------------------------------------------------------------------------
 
 /**
- * Compute what fraction of the final document's characters originated from
- * paste events rather than manual typing.
+ * Compute what fraction of the final document's characters were imported
+ * from external sources vs composed within the editor.
+ *
+ * Terminology:
+ *   - 'composed' — content authored within this document (typed, or
+ *     cut/copy+pasted from within the same document)
+ *   - 'imported' — content pasted from an external source
  *
  * Algorithm:
- *   Replay every event in session order while maintaining a parallel
- *   `origins` array — one entry per character in the reconstructed content.
- *   Each entry is either 'typed' or 'pasted'.
+ *   Replay every event in session order while maintaining:
+ *   - `origins[]`        — parallel array, one entry per char: 'composed' | 'imported'
+ *   - `content`          — reconstructed document string (for .includes() checks)
+ *   - `deletedContent`   — accumulates deleted text within the session, so
+ *                          delayed cut+paste is correctly detected
  *
- *   - session_start : reset origins to all-'typed' for baseContent
- *                     (baseContent is prior-session output, already authored)
- *   - insert        : splice in 'typed' markers at position
- *   - paste         : splice in 'pasted' markers at position
- *   - delete        : remove markers at position
- *   - session_end   : no-op
+ *   When a paste event occurs, the pasted string is checked against:
+ *   1. The current document content (catches copy+paste within the doc)
+ *   2. The deletedContent buffer (catches cut+paste, even if delayed)
+ *   If found in either → 'composed'. Otherwise → 'imported'.
+ *
+ *   The deletedContent buffer resets on session_start, scoping detection
+ *   to within a single writing session.
  *
  * @param {Object} document - A parsed .provenance document
- * @returns {{ pasteRatio: number, pastedCharCount: number, typedCharCount: number, totalCharCount: number }}
+ * @returns {{ pasteRatio: number, importedCharCount: number, composedCharCount: number, totalCharCount: number }}
  */
 export function pasteRatioAnalyzer(document) {
-  let origins = []; // origins[i] = 'typed' | 'pasted'
+  let origins = [];        // origins[i] = 'composed' | 'imported'
+  let content = '';        // reconstructed document content
+  let deletedContent = ''; // accumulates deleted text within session
 
   for (const session of document.sessions) {
     for (const event of session.events) {
       switch (event.type) {
         case 'session_start': {
-          // baseContent is the result of prior sessions — treat as typed
+          // baseContent is the result of prior sessions — treat as composed
           const baseContent = session.baseContent || '';
-          origins = new Array(baseContent.length).fill('typed');
+          origins = new Array(baseContent.length).fill('composed');
+          content = baseContent;
+          deletedContent = ''; // reset per session
           break;
         }
 
         case 'insert': {
-          const content = event.content || '';
-          if (content.length > 0) {
+          const text = event.content || '';
+          if (text.length > 0) {
             const pos = event.position;
-            const markers = new Array(content.length).fill('typed');
+            const markers = new Array(text.length).fill('composed');
             origins.splice(pos, 0, ...markers);
+            content = content.substring(0, pos) + text + content.substring(pos);
           }
           break;
         }
 
         case 'paste': {
-          const content = event.content || '';
-          if (content.length > 0) {
+          const text = event.content || '';
+          if (text.length > 0) {
             const pos = event.position;
-            const markers = new Array(content.length).fill('pasted');
+
+            // Determine if this paste is internal (composed) or external (imported)
+            const isInternal = content.includes(text) || deletedContent.includes(text);
+            const marker = isInternal ? 'composed' : 'imported';
+
+            const markers = new Array(text.length).fill(marker);
             origins.splice(pos, 0, ...markers);
+            content = content.substring(0, pos) + text + content.substring(pos);
           }
           break;
         }
 
         case 'delete': {
-          const content = event.content || '';
-          if (content.length > 0) {
+          const text = event.content || '';
+          if (text.length > 0) {
             const pos = event.position;
-            origins.splice(pos, content.length);
+            // Accumulate deleted content for delayed cut+paste detection
+            deletedContent += content.substring(pos, pos + text.length);
+            origins.splice(pos, text.length);
+            content = content.substring(0, pos) + content.substring(pos + text.length);
           }
           break;
         }
@@ -132,13 +154,13 @@ export function pasteRatioAnalyzer(document) {
   }
 
   const totalCharCount = origins.length;
-  const pastedCharCount = origins.filter(o => o === 'pasted').length;
-  const typedCharCount = totalCharCount - pastedCharCount;
+  const importedCharCount = origins.filter(o => o === 'imported').length;
+  const composedCharCount = totalCharCount - importedCharCount;
 
   return {
-    pasteRatio: totalCharCount > 0 ? pastedCharCount / totalCharCount : 0,
-    pastedCharCount,
-    typedCharCount,
+    pasteRatio: totalCharCount > 0 ? importedCharCount / totalCharCount : 0,
+    importedCharCount,
+    composedCharCount,
     totalCharCount
   };
 }
