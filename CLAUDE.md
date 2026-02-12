@@ -319,8 +319,9 @@ provenance/
 ├── package.json
 ├── vitest.config.js    # Test configuration
 ├── tests/              # Test suite
-│   ├── setup.js        # Test environment setup
-│   └── autosave.test.js # Autosave module tests
+│   ├── setup.js             # Test environment setup
+│   ├── autosave.test.js     # Autosave module tests
+│   └── postprocess.test.js  # Post-processing pipeline & paste-ratio tests
 ├── src/
 │   ├── server/         # Express server
 │   │   └── index.js
@@ -337,9 +338,10 @@ provenance/
 │   │       ├── sidebar.js      # Collapsible sidebar UI
 │   │       └── autosave.js     # Interval-based auto-save logic
 │   └── core/           # Core logic (shared between client/server)
-│       ├── recorder.js # Event recording with hash chain
-│       ├── hasher.js   # SHA-256 rolling hash implementation
-│       └── format.js   # .provenance file format & validation
+│       ├── recorder.js    # Event recording with hash chain
+│       ├── hasher.js      # SHA-256 rolling hash implementation
+│       ├── format.js      # .provenance file format & validation
+│       └── postprocess.js # Pluggable post-processing pipeline for derived statistics
 └── public/             # Static assets
 ```
 
@@ -412,6 +414,43 @@ event[2].hash = SHA256(event[2] + event[1].hash)
 
 **Critical**: All recorder operations (`startSession`, `endSession`, `recordInsert`, etc.) are async and use an internal operation queue to prevent race conditions. This ensures hash chain integrity even when multiple events fire in rapid succession.
 
+## Post-Processing Pipeline
+
+The post-processing pipeline (`src/core/postprocess.js`) runs analyzers on loaded `.provenance` documents to compute derived statistics that require full event replay. It runs at file-load time in the Verify tab (not during playback).
+
+### Architecture
+
+- `registerAnalyzer(name, fn)` — Register an analyzer function
+- `runPostProcessing(document)` — Run all registered analyzers, return results keyed by name
+- `clearAnalyzers()` — Remove all analyzers (for testing)
+- Error-isolated: a failing analyzer does not block others
+
+### Built-in Analyzers
+
+**pasteRatioAnalyzer**: Computes the character-level paste ratio by replaying all events while maintaining a parallel `origins[]` array. Each character position is tracked as either `'typed'` or `'pasted'`. The ratio is `pasted chars / total chars` in the final content.
+
+Key behaviors:
+- `session_start` resets origins to all-`'typed'` for baseContent (prior session output)
+- `insert` splices in `'typed'` markers at event position
+- `paste` splices in `'pasted'` markers at event position
+- `delete` removes markers at event position
+- Editing within pasted regions correctly updates origins (e.g., typing inside pasted text marks the new chars as typed)
+
+### Adding a New Analyzer
+
+```javascript
+import { registerAnalyzer } from './postprocess.js';
+
+registerAnalyzer('myAnalyzer', (document) => {
+  // Iterate document.sessions, process events, return results
+  return { metric: value };
+});
+
+// Access results after running the pipeline:
+const results = runPostProcessing(doc);
+results.myAnalyzer; // { metric: value }
+```
+
 ## Editor/Viewer Modes
 
 The app has two views controlled by nav buttons:
@@ -449,8 +488,9 @@ The project uses **Vitest** for testing with **jsdom** for DOM simulation.
 
 ```
 tests/
-├── setup.js           # Global test setup (fake timers, DOM mocks)
-└── autosave.test.js   # Autosave module tests (32 tests)
+├── setup.js              # Global test setup (fake timers, DOM mocks)
+├── autosave.test.js      # Autosave module tests (32 tests)
+└── postprocess.test.js   # Post-processing pipeline & paste-ratio tests (18 tests)
 ```
 
 ### Running Tests
@@ -485,6 +525,7 @@ await vi.advanceTimersByTimeAsync(2000); // Advance 2 seconds
 
 Current test coverage focuses on:
 - **Autosave module**: Interval-based saving, flush behavior, error handling, document switching scenarios
+- **Post-processing pipeline**: Analyzer registration, error isolation, paste-ratio computation across edge cases (empty docs, multi-session, mixed typed/pasted, deletions spanning regions, insert splitting pasted regions)
 
 Future tests should cover:
 - Hash chain integrity
