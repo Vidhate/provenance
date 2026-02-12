@@ -436,7 +436,7 @@ The analyzer distinguishes internal rearrangements (cut/copy+paste within the do
 When a paste event occurs, the pasted text is checked against `content.includes(text)` and `deletedContent.includes(text)`. If found in either → `'composed'` (internal). Otherwise → `'imported'` (external).
 
 Key behaviors:
-- `session_start` resets origins to all-`'composed'` for baseContent and clears `deletedContent`
+- `session_start` preserves existing origins if replayed content matches baseContent (carries forward imported markers from prior sessions); only resets to all-`'composed'` for the first session or when content doesn't match; clears `deletedContent`
 - `insert` splices in `'composed'` markers at event position
 - `paste` checks content/deletedContent, then splices in `'composed'` or `'imported'` markers
 - `delete` accumulates deleted text into `deletedContent` and removes markers
@@ -497,7 +497,7 @@ The project uses **Vitest** for testing with **jsdom** for DOM simulation.
 tests/
 ├── setup.js              # Global test setup (fake timers, DOM mocks)
 ├── autosave.test.js      # Autosave module tests (32 tests)
-└── postprocess.test.js   # Post-processing pipeline & paste-ratio tests (25 tests)
+└── postprocess.test.js   # Post-processing pipeline & paste-ratio tests (27 tests)
 ```
 
 ### Running Tests
@@ -532,7 +532,7 @@ await vi.advanceTimersByTimeAsync(2000); // Advance 2 seconds
 
 Current test coverage focuses on:
 - **Autosave module**: Interval-based saving, flush behavior, error handling, document switching scenarios
-- **Post-processing pipeline**: Analyzer registration, error isolation, paste-ratio computation across edge cases (empty docs, multi-session, mixed composed/imported, deletions spanning regions, insert splitting imported regions), composed vs imported classification (cut+paste, copy+paste, delayed cut+paste, session boundary isolation, external paste detection)
+- **Post-processing pipeline**: Analyzer registration, error isolation, paste-ratio computation across edge cases (empty docs, multi-session, mixed composed/imported, deletions spanning regions, insert splitting imported regions), composed vs imported classification (cut+paste, copy+paste, delayed cut+paste, session boundary isolation, external paste detection, multi-session origin preservation)
 
 Future tests should cover:
 - Hash chain integrity
