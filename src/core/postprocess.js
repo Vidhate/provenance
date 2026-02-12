@@ -89,6 +89,12 @@ export function runPostProcessing(document) {
  *   The deletedContent buffer resets on session_start, scoping detection
  *   to within a single writing session.
  *
+ *   Origin markers are preserved across sessions: if the reconstructed
+ *   content from replaying prior sessions matches the next session's
+ *   baseContent, existing origins carry forward. This ensures that
+ *   content imported in session N stays classified as 'imported' in
+ *   session N+1 and beyond.
+ *
  * @param {Object} document - A parsed .provenance document
  * @returns {{ pasteRatio: number, importedCharCount: number, composedCharCount: number, totalCharCount: number }}
  */
@@ -101,10 +107,21 @@ export function pasteRatioAnalyzer(document) {
     for (const event of session.events) {
       switch (event.type) {
         case 'session_start': {
-          // baseContent is the result of prior sessions — treat as composed
           const baseContent = session.baseContent || '';
-          origins = new Array(baseContent.length).fill('composed');
-          content = baseContent;
+
+          // If we already have origins from replaying prior sessions and
+          // the reconstructed content matches this session's baseContent,
+          // preserve the existing origin markers (they carry forward the
+          // true provenance — e.g. imported content stays imported).
+          // Only reset to all-'composed' when there are no prior origins
+          // (first session or standalone).
+          if (content === baseContent && origins.length === baseContent.length && origins.length > 0) {
+            // Keep existing origins — they reflect prior session replay
+          } else {
+            origins = new Array(baseContent.length).fill('composed');
+            content = baseContent;
+          }
+
           deletedContent = ''; // reset per session
           break;
         }
