@@ -17,7 +17,8 @@ let isPlaying = false;
 let playbackSpeed = 5;
 let playbackTimer = null;
 let replayContent = '';
-let replayOrigins = []; // Parallel array: 'typed' | 'pasted' per character
+let replayOrigins = []; // Parallel array: 'composed' | 'imported' per character
+let replayDeletedContent = ''; // Accumulates deleted text within session for cut+paste detection
 
 // DOM Elements
 let viewerEmpty, viewerContent, viewerTitle, viewerStats;
@@ -108,11 +109,11 @@ export async function loadProvenanceFile(doc) {
     </div>
     <div class="stat">
       <span class="stat-value">${displayPasteRatio.toFixed(1)}%</span>
-      <span class="stat-label">Content Paste Ratio</span>
+      <span class="stat-label">Imported Content Ratio</span>
     </div>
     <div class="stat">
-      <span class="stat-value">${pasteAnalysis.pastedCharCount ?? 0} / ${pasteAnalysis.totalCharCount ?? stats.finalContentLength}</span>
-      <span class="stat-label">Pasted / Total Chars</span>
+      <span class="stat-value">${pasteAnalysis.importedCharCount ?? 0} / ${pasteAnalysis.totalCharCount ?? stats.finalContentLength}</span>
+      <span class="stat-label">Imported / Total Chars</span>
     </div>
   `;
 
@@ -236,6 +237,7 @@ function resetPlayback() {
   currentEventIndex = 0;
   replayContent = '';
   replayOrigins = [];
+  replayDeletedContent = '';
   replayEditor.innerHTML = '';
   replayProgress.value = 0;
   updateTimeDisplay();
@@ -296,15 +298,16 @@ function applyEvent(event) {
         const before = replayContent.substring(0, event.position);
         const after = replayContent.substring(event.position);
         replayContent = before + event.content + after;
-        // Track origins — typed characters
-        const typedMarkers = new Array(event.content.length).fill('typed');
-        replayOrigins.splice(event.position, 0, ...typedMarkers);
+        const composedMarkers = new Array(event.content.length).fill('composed');
+        replayOrigins.splice(event.position, 0, ...composedMarkers);
       }
       break;
 
     case 'delete':
       if (event.content) {
         const deleteLength = event.content.length;
+        // Accumulate deleted content for cut+paste detection
+        replayDeletedContent += replayContent.substring(event.position, event.position + deleteLength);
         const before = replayContent.substring(0, event.position);
         const after = replayContent.substring(event.position + deleteLength);
         replayContent = before + after;
@@ -315,12 +318,15 @@ function applyEvent(event) {
 
     case 'paste':
       if (event.content) {
+        // Determine if this paste is internal (composed) or external (imported)
+        const isInternal = replayContent.includes(event.content) || replayDeletedContent.includes(event.content);
+        const marker = isInternal ? 'composed' : 'imported';
+
         const before = replayContent.substring(0, event.position);
         const after = replayContent.substring(event.position);
         replayContent = before + event.content + after;
-        // Track origins — pasted characters
-        const pastedMarkers = new Array(event.content.length).fill('pasted');
-        replayOrigins.splice(event.position, 0, ...pastedMarkers);
+        const markers = new Array(event.content.length).fill(marker);
+        replayOrigins.splice(event.position, 0, ...markers);
         showEventIndicator(`Pasted ${event.content.length} chars`, 'paste');
       }
       break;
@@ -329,7 +335,8 @@ function applyEvent(event) {
       // Initialize content to session's base content (for multi-session documents)
       if (event.sessionBaseContent) {
         replayContent = event.sessionBaseContent;
-        replayOrigins = new Array(event.sessionBaseContent.length).fill('typed');
+        replayOrigins = new Array(event.sessionBaseContent.length).fill('composed');
+        replayDeletedContent = '';
       }
       showEventIndicator('Session started', 'session');
       break;
@@ -355,9 +362,10 @@ function applyEvent(event) {
 function seekToEvent(targetIndex) {
   pausePlayback();
 
-  // Rebuild content and origins up to target event
+  // Rebuild content, origins, and deletedContent up to target event
   replayContent = '';
   replayOrigins = [];
+  replayDeletedContent = '';
   for (let i = 0; i <= targetIndex; i++) {
     const event = flatEvents[i];
 
@@ -366,7 +374,8 @@ function seekToEvent(targetIndex) {
         // Initialize content to session's base content (for multi-session documents)
         if (event.sessionBaseContent) {
           replayContent = event.sessionBaseContent;
-          replayOrigins = new Array(event.sessionBaseContent.length).fill('typed');
+          replayOrigins = new Array(event.sessionBaseContent.length).fill('composed');
+          replayDeletedContent = '';
         }
         break;
 
@@ -375,24 +384,27 @@ function seekToEvent(targetIndex) {
           const before = replayContent.substring(0, event.position);
           const after = replayContent.substring(event.position);
           replayContent = before + event.content + after;
-          const typedMarkers = new Array(event.content.length).fill('typed');
-          replayOrigins.splice(event.position, 0, ...typedMarkers);
+          const composedMarkers = new Array(event.content.length).fill('composed');
+          replayOrigins.splice(event.position, 0, ...composedMarkers);
         }
         break;
 
       case 'paste':
         if (event.content) {
+          const isInternal = replayContent.includes(event.content) || replayDeletedContent.includes(event.content);
+          const marker = isInternal ? 'composed' : 'imported';
           const before = replayContent.substring(0, event.position);
           const after = replayContent.substring(event.position);
           replayContent = before + event.content + after;
-          const pastedMarkers = new Array(event.content.length).fill('pasted');
-          replayOrigins.splice(event.position, 0, ...pastedMarkers);
+          const markers = new Array(event.content.length).fill(marker);
+          replayOrigins.splice(event.position, 0, ...markers);
         }
         break;
 
       case 'delete':
         if (event.content) {
           const deleteLength = event.content.length;
+          replayDeletedContent += replayContent.substring(event.position, event.position + deleteLength);
           const before = replayContent.substring(0, event.position);
           const after = replayContent.substring(event.position + deleteLength);
           replayContent = before + after;
@@ -458,16 +470,16 @@ function renderReplayContent() {
   let html = '';
   let i = 0;
   while (i < replayContent.length) {
-    const origin = replayOrigins[i] || 'typed';
+    const origin = replayOrigins[i] || 'composed';
     let j = i;
     // Find end of contiguous run with same origin
-    while (j < replayContent.length && (replayOrigins[j] || 'typed') === origin) {
+    while (j < replayContent.length && (replayOrigins[j] || 'composed') === origin) {
       j++;
     }
     const segment = replayContent.substring(i, j);
     const escaped = escapeHtml(segment);
-    if (origin === 'pasted') {
-      html += `<span class="pasted-content">${escaped}</span>`;
+    if (origin === 'imported') {
+      html += `<span class="imported-content">${escaped}</span>`;
     } else {
       html += escaped;
     }

@@ -811,7 +811,7 @@ body {
   overflow: auto;
 }
 
-.replay-editor .pasted-content {
+.replay-editor .imported-content {
   background: rgba(78, 204, 163, 0.12);
   border-radius: 2px;
   padding: 0 1px;
