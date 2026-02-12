@@ -107,7 +107,7 @@ export async function loadProvenanceFile(doc) {
     </div>
     <div class="stat">
       <span class="stat-value">${displayPasteRatio.toFixed(1)}%</span>
-      <span class="stat-label">Paste Ratio (by content)</span>
+      <span class="stat-label">Content Paste Ratio</span>
     </div>
     <div class="stat">
       <span class="stat-value">${pasteAnalysis.pastedCharCount ?? 0} / ${pasteAnalysis.totalCharCount ?? stats.finalContentLength}</span>
