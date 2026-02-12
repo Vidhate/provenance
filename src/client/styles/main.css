@@ -811,6 +811,12 @@ body {
   overflow: auto;
 }
 
+.replay-editor .pasted-content {
+  background: rgba(78, 204, 163, 0.12);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .event-indicator {
   position: absolute;
   bottom: 1rem;

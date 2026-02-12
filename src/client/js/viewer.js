@@ -17,6 +17,7 @@ let isPlaying = false;
 let playbackSpeed = 5;
 let playbackTimer = null;
 let replayContent = '';
+let replayOrigins = []; // Parallel array: 'typed' | 'pasted' per character
 
 // DOM Elements
 let viewerEmpty, viewerContent, viewerTitle, viewerStats;
@@ -234,7 +235,8 @@ function resetPlayback() {
   pausePlayback();
   currentEventIndex = 0;
   replayContent = '';
-  replayEditor.textContent = '';
+  replayOrigins = [];
+  replayEditor.innerHTML = '';
   replayProgress.value = 0;
   updateTimeDisplay();
   hideEventIndicator();
@@ -294,6 +296,9 @@ function applyEvent(event) {
         const before = replayContent.substring(0, event.position);
         const after = replayContent.substring(event.position);
         replayContent = before + event.content + after;
+        // Track origins — typed characters
+        const typedMarkers = new Array(event.content.length).fill('typed');
+        replayOrigins.splice(event.position, 0, ...typedMarkers);
       }
       break;
 
@@ -303,6 +308,7 @@ function applyEvent(event) {
         const before = replayContent.substring(0, event.position);
         const after = replayContent.substring(event.position + deleteLength);
         replayContent = before + after;
+        replayOrigins.splice(event.position, deleteLength);
         showEventIndicator('Deleted', 'delete');
       }
       break;
@@ -312,6 +318,9 @@ function applyEvent(event) {
         const before = replayContent.substring(0, event.position);
         const after = replayContent.substring(event.position);
         replayContent = before + event.content + after;
+        // Track origins — pasted characters
+        const pastedMarkers = new Array(event.content.length).fill('pasted');
+        replayOrigins.splice(event.position, 0, ...pastedMarkers);
         showEventIndicator(`Pasted ${event.content.length} chars`, 'paste');
       }
       break;
@@ -320,6 +329,7 @@ function applyEvent(event) {
       // Initialize content to session's base content (for multi-session documents)
       if (event.sessionBaseContent) {
         replayContent = event.sessionBaseContent;
+        replayOrigins = new Array(event.sessionBaseContent.length).fill('typed');
       }
       showEventIndicator('Session started', 'session');
       break;
@@ -329,8 +339,8 @@ function applyEvent(event) {
       break;
   }
 
-  // Update display
-  replayEditor.textContent = replayContent;
+  // Update display with paste highlighting
+  renderReplayContent();
 
   // Scroll to bottom if content is long
   replayEditor.scrollTop = replayEditor.scrollHeight;
@@ -345,8 +355,9 @@ function applyEvent(event) {
 function seekToEvent(targetIndex) {
   pausePlayback();
 
-  // Rebuild content up to target event
+  // Rebuild content and origins up to target event
   replayContent = '';
+  replayOrigins = [];
   for (let i = 0; i <= targetIndex; i++) {
     const event = flatEvents[i];
 
@@ -355,15 +366,27 @@ function seekToEvent(targetIndex) {
         // Initialize content to session's base content (for multi-session documents)
         if (event.sessionBaseContent) {
           replayContent = event.sessionBaseContent;
+          replayOrigins = new Array(event.sessionBaseContent.length).fill('typed');
         }
         break;
 
       case 'insert':
+        if (event.content) {
+          const before = replayContent.substring(0, event.position);
+          const after = replayContent.substring(event.position);
+          replayContent = before + event.content + after;
+          const typedMarkers = new Array(event.content.length).fill('typed');
+          replayOrigins.splice(event.position, 0, ...typedMarkers);
+        }
+        break;
+
       case 'paste':
         if (event.content) {
           const before = replayContent.substring(0, event.position);
           const after = replayContent.substring(event.position);
           replayContent = before + event.content + after;
+          const pastedMarkers = new Array(event.content.length).fill('pasted');
+          replayOrigins.splice(event.position, 0, ...pastedMarkers);
         }
         break;
 
@@ -373,13 +396,14 @@ function seekToEvent(targetIndex) {
           const before = replayContent.substring(0, event.position);
           const after = replayContent.substring(event.position + deleteLength);
           replayContent = before + after;
+          replayOrigins.splice(event.position, deleteLength);
         }
         break;
     }
   }
 
   currentEventIndex = targetIndex;
-  replayEditor.textContent = replayContent;
+  renderReplayContent();
   replayProgress.value = targetIndex;
   updateTimeDisplay();
   updateActiveSessionMarker();
@@ -417,6 +441,52 @@ function updateTimeDisplay() {
   const totalTime = lastEvent.timestamp - firstEvent.timestamp;
 
   replayTime.textContent = `${formatDuration(currentTime)} / ${formatDuration(totalTime)}`;
+}
+
+/**
+ * Render replay content with paste highlighting.
+ * Builds HTML from replayContent + replayOrigins, wrapping contiguous
+ * pasted regions in <span class="pasted-content"> for visual distinction.
+ */
+function renderReplayContent() {
+  if (replayContent.length === 0) {
+    replayEditor.innerHTML = '';
+    return;
+  }
+
+  // Build HTML by grouping contiguous runs of same origin
+  let html = '';
+  let i = 0;
+  while (i < replayContent.length) {
+    const origin = replayOrigins[i] || 'typed';
+    let j = i;
+    // Find end of contiguous run with same origin
+    while (j < replayContent.length && (replayOrigins[j] || 'typed') === origin) {
+      j++;
+    }
+    const segment = replayContent.substring(i, j);
+    const escaped = escapeHtml(segment);
+    if (origin === 'pasted') {
+      html += `<span class="pasted-content">${escaped}</span>`;
+    } else {
+      html += escaped;
+    }
+    i = j;
+  }
+
+  replayEditor.innerHTML = html;
+}
+
+/**
+ * Escape HTML special characters for safe innerHTML insertion
+ */
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 /**
