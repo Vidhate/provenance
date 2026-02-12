@@ -6,6 +6,7 @@
  */
 
 import { validate, getStatistics } from '../../core/format.js';
+import { runPostProcessing } from '../../core/postprocess.js';
 
 // State
 let currentDocument = null;
@@ -73,6 +74,13 @@ export async function loadProvenanceFile(doc) {
   // Get statistics
   const stats = getStatistics(doc);
 
+  // Run post-processing pipeline for derived statistics
+  const postResults = runPostProcessing(doc);
+  const pasteAnalysis = postResults.pasteRatio || {};
+
+  // Use character-level paste ratio from post-processing, fall back to event-count ratio
+  const displayPasteRatio = (pasteAnalysis.pasteRatio ?? stats.pasteRatio) * 100;
+
   // Update UI
   viewerTitle.textContent = doc.metadata.title || 'Untitled';
 
@@ -98,8 +106,12 @@ export async function loadProvenanceFile(doc) {
       <span class="stat-label">Writing Time</span>
     </div>
     <div class="stat">
-      <span class="stat-value">${(stats.pasteRatio * 100).toFixed(1)}%</span>
-      <span class="stat-label">Paste Ratio</span>
+      <span class="stat-value">${displayPasteRatio.toFixed(1)}%</span>
+      <span class="stat-label">Paste Ratio (by content)</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value">${pasteAnalysis.pastedCharCount ?? 0} / ${pasteAnalysis.totalCharCount ?? stats.finalContentLength}</span>
+      <span class="stat-label">Pasted / Total Chars</span>
     </div>
   `;
 
