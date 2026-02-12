@@ -6,11 +6,14 @@
  */
 
 import { validate, getStatistics } from '../../core/format.js';
+import { buildCumulativeWritingTimes } from '../../core/playbackTime.js';
 
 // State
 let currentDocument = null;
 let allEvents = [];
 let flatEvents = []; // All events flattened with absolute timestamps
+let cumulativeTimes = []; // Cumulative writing time (ms) at each event index
+let totalWritingTime = 0; // Total cumulative writing time (ms)
 let currentEventIndex = 0;
 let isPlaying = false;
 let playbackSpeed = 5;
@@ -136,6 +139,11 @@ function flattenEvents(sessions) {
 
   // Sort by timestamp
   flatEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+  // Build cumulative writing-time map (collapses inter-session gaps)
+  const timeMap = buildCumulativeWritingTimes(flatEvents);
+  cumulativeTimes = timeMap.cumulativeTimes;
+  totalWritingTime = timeMap.totalTime;
 
   // Update progress slider
   replayProgress.max = flatEvents.length - 1;
@@ -390,6 +398,9 @@ function handleProgressSeek() {
 
 /**
  * Update the time display
+ *
+ * Uses pre-computed cumulative writing times that collapse inter-session
+ * gaps, so the timer reflects actual writing duration.
  */
 function updateTimeDisplay() {
   if (flatEvents.length === 0) {
@@ -397,14 +408,10 @@ function updateTimeDisplay() {
     return;
   }
 
-  const currentEvent = flatEvents[currentEventIndex] || flatEvents[0];
-  const firstEvent = flatEvents[0];
-  const lastEvent = flatEvents[flatEvents.length - 1];
+  const idx = Math.min(currentEventIndex, flatEvents.length - 1);
+  const currentTime = cumulativeTimes[idx] || 0;
 
-  const currentTime = currentEvent.timestamp - firstEvent.timestamp;
-  const totalTime = lastEvent.timestamp - firstEvent.timestamp;
-
-  replayTime.textContent = `${formatDuration(currentTime)} / ${formatDuration(totalTime)}`;
+  replayTime.textContent = `${formatDuration(currentTime)} / ${formatDuration(totalWritingTime)}`;
 }
 
 /**
