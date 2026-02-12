@@ -427,14 +427,21 @@ The post-processing pipeline (`src/core/postprocess.js`) runs analyzers on loade
 
 ### Built-in Analyzers
 
-**pasteRatioAnalyzer**: Computes the character-level paste ratio by replaying all events while maintaining a parallel `origins[]` array. Each character position is tracked as either `'typed'` or `'pasted'`. The ratio is `pasted chars / total chars` in the final content.
+**pasteRatioAnalyzer**: Computes the character-level imported content ratio by replaying all events while maintaining a parallel `origins[]` array. Each character position is tracked as either `'composed'` (authored within the document) or `'imported'` (pasted from an external source). The ratio is `imported chars / total chars` in the final content.
+
+The analyzer distinguishes internal rearrangements (cut/copy+paste within the document) from truly external pastes by maintaining:
+- `content` — reconstructed document string (for `.includes()` checks at paste time)
+- `deletedContent` — accumulates deleted text within a session (catches delayed cut+paste)
+
+When a paste event occurs, the pasted text is checked against `content.includes(text)` and `deletedContent.includes(text)`. If found in either → `'composed'` (internal). Otherwise → `'imported'` (external).
 
 Key behaviors:
-- `session_start` resets origins to all-`'typed'` for baseContent (prior session output)
-- `insert` splices in `'typed'` markers at event position
-- `paste` splices in `'pasted'` markers at event position
-- `delete` removes markers at event position
-- Editing within pasted regions correctly updates origins (e.g., typing inside pasted text marks the new chars as typed)
+- `session_start` resets origins to all-`'composed'` for baseContent and clears `deletedContent`
+- `insert` splices in `'composed'` markers at event position
+- `paste` checks content/deletedContent, then splices in `'composed'` or `'imported'` markers
+- `delete` accumulates deleted text into `deletedContent` and removes markers
+- `deletedContent` resets per session (session_start), scoping detection within a single sitting
+- Editing within imported regions correctly updates origins (e.g., typing inside imported text marks the new chars as composed)
 
 ### Adding a New Analyzer
 
@@ -490,7 +497,7 @@ The project uses **Vitest** for testing with **jsdom** for DOM simulation.
 tests/
 ├── setup.js              # Global test setup (fake timers, DOM mocks)
 ├── autosave.test.js      # Autosave module tests (32 tests)
-└── postprocess.test.js   # Post-processing pipeline & paste-ratio tests (18 tests)
+└── postprocess.test.js   # Post-processing pipeline & paste-ratio tests (25 tests)
 ```
 
 ### Running Tests
@@ -525,7 +532,7 @@ await vi.advanceTimersByTimeAsync(2000); // Advance 2 seconds
 
 Current test coverage focuses on:
 - **Autosave module**: Interval-based saving, flush behavior, error handling, document switching scenarios
-- **Post-processing pipeline**: Analyzer registration, error isolation, paste-ratio computation across edge cases (empty docs, multi-session, mixed typed/pasted, deletions spanning regions, insert splitting pasted regions)
+- **Post-processing pipeline**: Analyzer registration, error isolation, paste-ratio computation across edge cases (empty docs, multi-session, mixed composed/imported, deletions spanning regions, insert splitting imported regions), composed vs imported classification (cut+paste, copy+paste, delayed cut+paste, session boundary isolation, external paste detection)
 
 Future tests should cover:
 - Hash chain integrity
