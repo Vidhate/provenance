@@ -447,9 +447,6 @@ async function confirmNewDocument() {
  * the recording session at that point.
  */
 async function handleEditorChange(content) {
-  // Update preview
-  updatePreview(content);
-
   // Update status bar
   updateStatusBar();
 
@@ -485,58 +482,6 @@ async function handleEditorChange(content) {
   if (currentFileHandle && workHasBegun) {
     scheduleAutosave(content, true);
   }
-}
-
-/**
- * Update the markdown preview
- */
-function updatePreview(content) {
-  const preview = document.getElementById('preview');
-  if (preview) {
-    preview.innerHTML = renderMarkdown(content);
-  }
-}
-
-/**
- * Simple markdown renderer
- */
-function renderMarkdown(text) {
-  if (!text) return '';
-
-  let html = text
-    // Escape HTML
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // Headers
-    .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-    .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-    .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Code blocks
-    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    // Blockquotes
-    .replace(/^> (.*$)/gm, '<blockquote>$1</blockquote>')
-    // Unordered lists
-    .replace(/^[\*\-] (.*$)/gm, '<li>$1</li>')
-    // Paragraphs (double newlines)
-    .replace(/\n\n/g, '</p><p>')
-    // Line breaks
-    .replace(/\n/g, '<br>');
-
-  // Wrap in paragraph if not already wrapped
-  if (html && !html.startsWith('<')) {
-    html = '<p>' + html + '</p>';
-  }
-
-  return html;
 }
 
 /**
@@ -801,7 +746,6 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     resetAutosave(sessionBaseContent);
 
     // Update UI
-    updatePreview(doc.finalContent || '');
     updateStatusBar();
     highlightActiveFile(filename);
     recordingStatus.textContent = 'Ready';

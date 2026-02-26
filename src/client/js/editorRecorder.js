@@ -6,6 +6,7 @@
  */
 
 import { createRecorder, EventType } from '../../core/recorder.js';
+import { getEditorContent } from './editor.js';
 
 let recorder = null;
 let lastContent = '';
@@ -110,12 +111,9 @@ async function handleEditorPaste(event) {
   await recorder.recordPaste(position, content);
 
   // Update lastContent after paste is processed
-  // Small delay to ensure the paste has been applied to the textarea
+  // Small delay to ensure the paste has been applied to the editor
   setTimeout(() => {
-    const textarea = document.querySelector('.editor-textarea');
-    if (textarea) {
-      lastContent = textarea.value;
-    }
+    lastContent = getEditorContent();
   }, 10);
 }
 
