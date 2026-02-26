@@ -509,6 +509,18 @@ body {
 
 .doc-title-input::placeholder {
   color: var(--text-secondary);
+  opacity: 0.3;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-weight: 300;
+}
+
+/* Editor placeholder */
+.cm-placeholder {
+  color: var(--text-secondary) !important;
+  opacity: 0.25;
+  letter-spacing: 0.15em;
+  font-weight: 300;
 }
 
 /* Editor Container */

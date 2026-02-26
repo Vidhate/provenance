@@ -46,6 +46,7 @@ const provenanceTheme = EditorView.theme({
   }
 }, { dark: true });
 
+
 /**
  * Create the editor
  * @param {HTMLElement} container - The container element
@@ -66,7 +67,7 @@ export async function createEditor(container, options = {}) {
       markdown(),
       provenanceTheme,
       inPlaceRenderPlugin,
-      placeholder('Start writing in markdown...'),
+      placeholder('CONTENT'),
       EditorView.lineWrapping,
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
