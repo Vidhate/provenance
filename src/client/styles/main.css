@@ -655,33 +655,159 @@ body {
   display: none;
 }
 
-.viewer-info {
-  margin-bottom: 1.5rem;
-}
-
-.viewer-stats {
+/* Stats bar — always visible */
+.stats-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
-  font-size: 0.875rem;
-  color: var(--text-secondary);
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
 }
 
-.viewer-stats .stat {
+.stats-bar-primary {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
 }
 
-.viewer-stats .stat-value {
-  font-size: 1.25rem;
+.stats-bar-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.stats-bar-value {
+  font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.viewer-stats .stat-label {
-  font-size: 0.75rem;
+.stats-bar-label {
+  font-size: 0.65rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.stats-bar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.stats-bar-toggle:hover {
+  color: var(--accent);
+  background: rgba(78, 204, 163, 0.1);
+}
+
+.stats-bar-toggle.expanded svg {
+  transform: rotate(180deg);
+}
+
+.stats-bar-toggle svg {
+  transition: transform 0.2s;
+}
+
+/* Expandable details card */
+.stats-details {
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.stats-details.hidden {
+  display: none;
+}
+
+.stats-detail-summary {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.6rem;
+}
+
+.detail-stat {
+  cursor: default;
+}
+
+.detail-stat-value {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.detail-stat-sep {
+  color: var(--text-secondary);
+  opacity: 0.4;
+}
+
+/* Session list inside details */
+.stats-detail-sessions {
+  max-height: calc(2.2rem * 3); /* 3 rows visible */
+  overflow-y: auto;
+  position: relative;
+}
+
+/* Fade hint at the bottom to indicate scrollability */
+.stats-detail-sessions.scrollable::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: block;
+  height: 1.5rem;
+  background: linear-gradient(transparent, var(--bg-secondary));
+  pointer-events: none;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.session-row:hover {
+  background: rgba(78, 204, 163, 0.1);
+}
+
+.session-row.active {
+  background: rgba(78, 204, 163, 0.2);
+}
+
+.session-row-label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.session-row-date {
+  color: var(--text-secondary);
+  flex: 1;
+  text-align: center;
+}
+
+.session-row-duration {
+  color: var(--text-secondary);
+  min-width: 3rem;
+  text-align: right;
 }
 
 /* Replay Controls */
@@ -854,51 +980,6 @@ body {
   color: var(--bg-primary);
 }
 
-/* Session Timeline */
-.session-timeline {
-  display: flex;
-  gap: 0.5rem;
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: 6px;
-  margin-top: 1rem;
-  overflow-x: auto;
-}
-
-.session-marker {
-  padding: 0.5rem 1rem;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.session-marker:hover {
-  border-color: var(--accent);
-}
-
-.session-marker.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg-primary);
-}
-
-.session-marker .session-date {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-}
-
-.session-marker .session-duration {
-  color: var(--text-secondary);
-}
-
-.session-marker.active .session-duration {
-  color: var(--bg-secondary);
-}
 
 /* Modal */
 .modal {

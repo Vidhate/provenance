@@ -28,11 +28,13 @@ const SPEED_STEPS = [1, 2, 5, 10, 50];
 let speedIndex = 2; // Default to 5x
 
 // DOM Elements
-let viewerEmpty, viewerContent, viewerTitle, viewerStats;
+let viewerEmpty, viewerContent, viewerTitle;
 let verificationStatus, btnPlay, btnPause, btnReset;
 let btnSpeedUp, btnSpeedDown, speedDisplay;
 let replayProgress, replayTime;
-let replayEditor, eventIndicator, sessionTimeline;
+let replayEditor, eventIndicator;
+let statWritingTime, statOriginalPct;
+let btnToggleDetails, statsDetails, statsDetailSummary, statsDetailSessions;
 
 /**
  * Initialize the viewer
@@ -42,7 +44,6 @@ export function initViewer() {
   viewerEmpty = document.getElementById('viewer-empty');
   viewerContent = document.getElementById('viewer-content');
   viewerTitle = document.getElementById('viewer-title');
-  viewerStats = document.getElementById('viewer-stats');
   verificationStatus = document.getElementById('verification-status');
   btnPlay = document.getElementById('btn-play');
   btnPause = document.getElementById('btn-pause');
@@ -54,7 +55,12 @@ export function initViewer() {
   replayTime = document.getElementById('replay-time');
   replayEditor = document.getElementById('replay-editor');
   eventIndicator = document.getElementById('event-indicator');
-  sessionTimeline = document.getElementById('session-timeline');
+  statWritingTime = document.getElementById('stat-writing-time');
+  statOriginalPct = document.getElementById('stat-original-pct');
+  btnToggleDetails = document.getElementById('btn-toggle-details');
+  statsDetails = document.getElementById('stats-details');
+  statsDetailSummary = document.getElementById('stats-detail-summary');
+  statsDetailSessions = document.getElementById('stats-detail-sessions');
 
   // Setup event listeners
   btnPlay.addEventListener('click', startPlayback);
@@ -63,6 +69,7 @@ export function initViewer() {
   btnSpeedDown.addEventListener('click', decreaseSpeed);
   btnSpeedUp.addEventListener('click', increaseSpeed);
   replayProgress.addEventListener('input', handleProgressSeek);
+  btnToggleDetails.addEventListener('click', toggleDetails);
 }
 
 /**
@@ -93,43 +100,57 @@ export async function loadProvenanceFile(doc) {
 
   // Use character-level paste ratio from post-processing, fall back to event-count ratio
   const displayPasteRatio = (pasteAnalysis.pasteRatio ?? stats.pasteRatio) * 100;
+  const originalPct = (100 - displayPasteRatio).toFixed(1);
 
   // Update UI
   viewerTitle.textContent = doc.metadata.title || 'Untitled';
 
-  viewerStats.innerHTML = `
-    <div class="stat">
-      <span class="stat-value">${stats.sessionCount}</span>
-      <span class="stat-label">Sessions</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">${stats.totalEvents}</span>
-      <span class="stat-label">Events</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">${stats.totalCharsTyped}</span>
-      <span class="stat-label">Characters Typed</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">${stats.pasteEvents}</span>
-      <span class="stat-label">Paste Events</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">${stats.totalWritingTimeFormatted}</span>
-      <span class="stat-label">Writing Time</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">${displayPasteRatio.toFixed(1)}%</span>
-      <span class="stat-label">Imported Content Ratio</span>
-    </div>
-    <div class="stat">
-      <span class="stat-value">${pasteAnalysis.importedCharCount ?? 0} / ${pasteAnalysis.totalCharCount ?? stats.finalContentLength}</span>
-      <span class="stat-label">Imported / Total Chars</span>
-    </div>
-  `;
+  // Primary stats bar
+  statWritingTime.textContent = stats.totalWritingTimeFormatted;
+  statOriginalPct.textContent = `${originalPct}%`;
 
-  // Build session timeline
-  buildSessionTimeline(doc.sessions);
+  // Detail summary — individual spans with tooltips and highlighted numbers
+  const importedCount = pasteAnalysis.importedCharCount ?? 0;
+  const totalCount = pasteAnalysis.totalCharCount ?? stats.finalContentLength;
+
+  const detailStats = [
+    {
+      value: stats.sessionCount,
+      label: 'Sessions',
+      tooltip: 'Number of separate writing sittings recorded for this document'
+    },
+    {
+      value: stats.totalEvents,
+      label: 'Events',
+      tooltip: 'Total number of recorded actions — keystrokes, deletions, pastes, and session markers'
+    },
+    {
+      value: stats.totalCharsTyped,
+      label: 'Chars Typed',
+      tooltip: 'Total characters inserted by typing (excludes pasted content)'
+    },
+    {
+      value: stats.pasteEvents,
+      label: 'Paste Events',
+      tooltip: 'Number of times content was pasted from the clipboard'
+    },
+    {
+      value: `${importedCount}/${totalCount}`,
+      label: 'Imported Chars',
+      tooltip: 'Characters pasted from external sources vs total characters in the final document'
+    }
+  ];
+
+  statsDetailSummary.innerHTML = detailStats.map(s =>
+    `<span class="detail-stat" title="${s.tooltip}"><span class="detail-stat-value">${s.value}</span> ${s.label}</span>`
+  ).join('<span class="detail-stat-sep"> · </span>');
+
+  // Collapse details by default
+  statsDetails.classList.add('hidden');
+  btnToggleDetails.classList.remove('expanded');
+
+  // Build session list inside details
+  buildSessionList(doc.sessions);
 
   // Flatten all events with absolute timestamps
   flattenEvents(doc.sessions);
@@ -172,29 +193,45 @@ function flattenEvents(sessions) {
 }
 
 /**
- * Build the session timeline UI
+ * Toggle the details card
  */
-function buildSessionTimeline(sessions) {
-  sessionTimeline.innerHTML = '';
+function toggleDetails() {
+  const isHidden = statsDetails.classList.toggle('hidden');
+  btnToggleDetails.classList.toggle('expanded', !isHidden);
+}
+
+/**
+ * Build the session list inside the details card
+ */
+function buildSessionList(sessions) {
+  statsDetailSessions.innerHTML = '';
 
   sessions.forEach((session, index) => {
-    const marker = document.createElement('div');
-    marker.className = 'session-marker';
-    marker.dataset.sessionIndex = index;
+    const row = document.createElement('div');
+    row.className = 'session-row';
+    row.dataset.sessionIndex = index;
 
     const startDate = new Date(session.startTime);
     const endDate = new Date(session.endTime);
     const duration = endDate - startDate;
 
-    marker.innerHTML = `
-      <span class="session-date">Session ${index + 1}: ${formatDate(startDate)}</span>
-      <span class="session-duration">${formatDuration(duration)}</span>
+    row.innerHTML = `
+      <span class="session-row-label">Session ${index + 1}</span>
+      <span class="session-row-date">${formatDate(startDate)}</span>
+      <span class="session-row-duration">${formatDuration(duration)}</span>
     `;
 
-    marker.addEventListener('click', () => jumpToSession(index));
+    row.addEventListener('click', () => jumpToSession(index));
 
-    sessionTimeline.appendChild(marker);
+    statsDetailSessions.appendChild(row);
   });
+
+  // Add scrollable class if more than 3 sessions (for fade hint)
+  if (sessions.length > 3) {
+    statsDetailSessions.classList.add('scrollable');
+  } else {
+    statsDetailSessions.classList.remove('scrollable');
+  }
 }
 
 /**
@@ -211,7 +248,7 @@ function jumpToSession(sessionIndex) {
   }
 
   // Update active marker
-  document.querySelectorAll('.session-marker').forEach((m, i) => {
+  document.querySelectorAll('.session-row').forEach((m, i) => {
     m.classList.toggle('active', i === sessionIndex);
   });
 }
@@ -611,7 +648,7 @@ function updateActiveSessionMarker() {
   const sessionIndex = currentDocument.sessions.findIndex(s => s.id === currentSessionId);
 
   // Update markers
-  document.querySelectorAll('.session-marker').forEach((marker, index) => {
-    marker.classList.toggle('active', index === sessionIndex);
+  document.querySelectorAll('.session-row').forEach((row, index) => {
+    row.classList.toggle('active', index === sessionIndex);
   });
 }

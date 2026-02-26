@@ -113,8 +113,29 @@
           </div>
 
           <div id="viewer-content" class="viewer-content hidden">
-            <div class="viewer-info">
-              <div class="viewer-stats" id="viewer-stats"></div>
+            <!-- Compact stats bar with expandable details -->
+            <div class="stats-bar">
+              <div class="stats-bar-primary">
+                <div class="stats-bar-metric">
+                  <span id="stat-writing-time" class="stats-bar-value">0s</span>
+                  <span class="stats-bar-label">WRITING TIME</span>
+                </div>
+                <div class="stats-bar-metric">
+                  <span id="stat-original-pct" class="stats-bar-value">100%</span>
+                  <span class="stats-bar-label">ORIGINAL</span>
+                </div>
+              </div>
+              <button id="btn-toggle-details" class="stats-bar-toggle" aria-label="Toggle details">
+                <span>Details</span>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 4.5L6 7.5L9 4.5"/>
+                </svg>
+              </button>
+            </div>
+
+            <div id="stats-details" class="stats-details hidden">
+              <div id="stats-detail-summary" class="stats-detail-summary"></div>
+              <div id="stats-detail-sessions" class="stats-detail-sessions"></div>
             </div>
 
             <div class="replay-container">
@@ -161,9 +182,6 @@
                 <div class="event-indicator" id="event-indicator"></div>
               </div>
 
-              <div class="session-timeline" id="session-timeline">
-                <!-- Session markers will be added here -->
-              </div>
             </div>
           </div>
         </section>
