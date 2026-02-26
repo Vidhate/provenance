@@ -365,7 +365,6 @@ function applyEvent(event) {
         const after = replayContent.substring(event.position + deleteLength);
         replayContent = before + after;
         replayOrigins.splice(event.position, deleteLength);
-        showEventIndicator('Deleted', 'delete');
       }
       break;
 
@@ -380,7 +379,7 @@ function applyEvent(event) {
         replayContent = before + event.content + after;
         const markers = new Array(event.content.length).fill(marker);
         replayOrigins.splice(event.position, 0, ...markers);
-        showEventIndicator(`Pasted ${event.content.length} chars`, 'paste');
+        showEventIndicator(`Pasted ${event.content.length} chars`, 'paste', playbackSpeed);
       }
       break;
 
@@ -396,11 +395,16 @@ function applyEvent(event) {
         }
         replayDeletedContent = '';
       }
-      showEventIndicator('Session started', 'session');
+      // Determine session number from document
+      {
+        const sessionNum = currentDocument
+          ? currentDocument.sessions.findIndex(s => s.id === event.sessionId) + 1
+          : 0;
+        showEventIndicator(`Session ${sessionNum} Started`, 'session', playbackSpeed);
+      }
       break;
 
     case 'session_end':
-      showEventIndicator('Session ended', 'session');
       break;
   }
 
@@ -588,23 +592,38 @@ function escapeHtml(text) {
 }
 
 /**
- * Show event indicator
+ * Show a floating event toast that rises and fades out.
+ * Spawns a new element each time so multiple toasts can coexist.
+ *
+ * @param {string} text - Display text
+ * @param {string} type - CSS modifier class ('paste' | 'session')
+ * @param {number} speed - Current playback speed (controls fade duration)
  */
-function showEventIndicator(text, type) {
-  eventIndicator.textContent = text;
-  eventIndicator.className = `event-indicator visible ${type}`;
+function showEventIndicator(text, type, speed) {
+  const container = eventIndicator.parentElement;
+  if (!container) return;
 
-  // Auto-hide after delay
-  setTimeout(() => {
-    eventIndicator.classList.remove('visible');
-  }, 1500);
+  const toast = document.createElement('div');
+  toast.className = `event-toast ${type}`;
+  toast.textContent = text;
+
+  // Speed-aware duration: 3s for ≤5x, 1.5s for >5x
+  const duration = speed > 5 ? 1500 : 3000;
+  toast.style.animationDuration = `${duration}ms`;
+
+  container.appendChild(toast);
+
+  // Remove from DOM after animation completes
+  toast.addEventListener('animationend', () => toast.remove());
 }
 
 /**
- * Hide event indicator
+ * Hide event indicator (clears any lingering toasts)
  */
 function hideEventIndicator() {
-  eventIndicator.classList.remove('visible');
+  const container = eventIndicator.parentElement;
+  if (!container) return;
+  container.querySelectorAll('.event-toast').forEach(t => t.remove());
 }
 
 /**
