@@ -23,10 +23,15 @@ let replayContent = '';
 let replayOrigins = []; // Parallel array: 'composed' | 'imported' per character
 let replayDeletedContent = ''; // Accumulates deleted text within session for cut+paste detection
 
+// Speed steps for +/- control
+const SPEED_STEPS = [1, 2, 5, 10, 50];
+let speedIndex = 2; // Default to 5x
+
 // DOM Elements
 let viewerEmpty, viewerContent, viewerTitle, viewerStats;
 let verificationStatus, btnPlay, btnPause, btnReset;
-let replaySpeed, replayProgress, replayTime;
+let btnSpeedUp, btnSpeedDown, speedDisplay;
+let replayProgress, replayTime;
 let replayEditor, eventIndicator, sessionTimeline;
 
 /**
@@ -42,7 +47,9 @@ export function initViewer() {
   btnPlay = document.getElementById('btn-play');
   btnPause = document.getElementById('btn-pause');
   btnReset = document.getElementById('btn-reset');
-  replaySpeed = document.getElementById('replay-speed');
+  btnSpeedDown = document.getElementById('btn-speed-down');
+  btnSpeedUp = document.getElementById('btn-speed-up');
+  speedDisplay = document.getElementById('replay-speed');
   replayProgress = document.getElementById('replay-progress');
   replayTime = document.getElementById('replay-time');
   replayEditor = document.getElementById('replay-editor');
@@ -53,7 +60,8 @@ export function initViewer() {
   btnPlay.addEventListener('click', startPlayback);
   btnPause.addEventListener('click', pausePlayback);
   btnReset.addEventListener('click', resetPlayback);
-  replaySpeed.addEventListener('change', handleSpeedChange);
+  btnSpeedDown.addEventListener('click', decreaseSpeed);
+  btnSpeedUp.addEventListener('click', increaseSpeed);
   replayProgress.addEventListener('input', handleProgressSeek);
 }
 
@@ -440,10 +448,34 @@ function seekToEvent(targetIndex) {
 }
 
 /**
- * Handle speed change
+ * Increase playback speed
  */
-function handleSpeedChange() {
-  playbackSpeed = parseInt(replaySpeed.value, 10);
+function increaseSpeed() {
+  if (speedIndex < SPEED_STEPS.length - 1) {
+    speedIndex++;
+    playbackSpeed = SPEED_STEPS[speedIndex];
+    updateSpeedDisplay();
+  }
+}
+
+/**
+ * Decrease playback speed
+ */
+function decreaseSpeed() {
+  if (speedIndex > 0) {
+    speedIndex--;
+    playbackSpeed = SPEED_STEPS[speedIndex];
+    updateSpeedDisplay();
+  }
+}
+
+/**
+ * Update speed display text
+ */
+function updateSpeedDisplay() {
+  if (speedDisplay) {
+    speedDisplay.textContent = `${playbackSpeed}x`;
+  }
 }
 
 /**
