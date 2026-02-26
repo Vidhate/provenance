@@ -42,6 +42,9 @@ const RENAME_DEBOUNCE_DELAY = 1500; // Wait 1.5 seconds after user stops typing 
 // Flag to prevent handleEditorChange from triggering auto-create during file load
 let isLoadingDocument = false;
 
+// Preserving status
+const PRESERVING_WORD = 'CHRONICLING';
+
 /**
  * Initialize the application
  */
@@ -350,6 +353,22 @@ async function switchView(view) {
 }
 
 /**
+ * Start the preserving status
+ */
+function startPreservingStatus() {
+  recordingStatus.textContent = PRESERVING_WORD;
+  recordingStatus.classList.add('preserving');
+}
+
+/**
+ * Stop the preserving status and show Ready
+ */
+function stopPreservingStatus() {
+  recordingStatus.textContent = '';
+  recordingStatus.classList.remove('preserving');
+}
+
+/**
  * Close the current editing session
  * Called when switching tabs or closing the document
  */
@@ -375,8 +394,7 @@ async function closeCurrentSession() {
   recorder.reset();
 
   // Update UI
-  recordingStatus.textContent = 'Ready';
-  recordingStatus.classList.remove('recording');
+  stopPreservingStatus();
 }
 
 /**
@@ -411,8 +429,7 @@ function newDocument() {
 
   // Update UI
   docTitle.value = '';
-  recordingStatus.textContent = 'Ready';
-  recordingStatus.classList.remove('recording');
+  stopPreservingStatus();
 
   // Clear active file in sidebar
   clearActiveFile();
@@ -467,9 +484,8 @@ async function handleEditorChange(content) {
     // before any insert/delete events are recorded
     await recorder.startSession();
 
-    // Update UI to show recording
-    recordingStatus.textContent = 'Recording';
-    recordingStatus.classList.add('recording');
+    // Update UI to show preserving status
+    startPreservingStatus();
 
     // Auto-create file in vault if ready (only for new documents)
     if (pendingAutoCreate && isVaultReady()) {
@@ -748,8 +764,7 @@ async function handleFileSelectFromSidebar(fileHandle, filename) {
     // Update UI
     updateStatusBar();
     highlightActiveFile(filename);
-    recordingStatus.textContent = 'Ready';
-    recordingStatus.classList.remove('recording');
+    stopPreservingStatus();
 
     console.log('Document opened from sidebar (session will start on first edit)');
   } catch (err) {
