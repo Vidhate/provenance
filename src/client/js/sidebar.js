@@ -18,7 +18,6 @@ let cachedFiles = []; // Cache files for re-rendering with different handlers
 // DOM elements
 let sidebar = null;
 let sidebarToggle = null;
-let headerToggle = null;
 let fileList = null;
 let fileListContainer = null;
 let vaultSetup = null;
@@ -43,7 +42,6 @@ export function initSidebar(options = {}) {
   // Get DOM elements
   sidebar = document.getElementById('sidebar');
   sidebarToggle = document.getElementById('sidebar-toggle');
-  headerToggle = document.getElementById('header-sidebar-toggle');
   fileList = document.getElementById('file-list');
   fileListContainer = document.getElementById('file-list-container');
   vaultSetup = document.getElementById('vault-setup');
@@ -56,10 +54,6 @@ export function initSidebar(options = {}) {
   // Setup event listeners
   if (sidebarToggle) {
     sidebarToggle.addEventListener('click', toggleSidebar);
-  }
-
-  if (headerToggle) {
-    headerToggle.addEventListener('click', toggleSidebar);
   }
 
   if (btnSelectVault) {
