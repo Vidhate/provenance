@@ -25,7 +25,6 @@ let sidebarLoading = null;
 let sidebarError = null;
 let btnSelectVault = null;
 let btnChangeVault = null;
-let btnRefreshFiles = null;
 
 /**
  * Initialize the sidebar
@@ -49,7 +48,6 @@ export function initSidebar(options = {}) {
   sidebarError = document.getElementById('sidebar-error');
   btnSelectVault = document.getElementById('btn-select-vault');
   btnChangeVault = document.getElementById('btn-change-vault');
-  btnRefreshFiles = document.getElementById('btn-refresh-files');
 
   // Setup event listeners
   if (sidebarToggle) {
@@ -62,10 +60,6 @@ export function initSidebar(options = {}) {
 
   if (btnChangeVault) {
     btnChangeVault.addEventListener('click', handleVaultSetup);
-  }
-
-  if (btnRefreshFiles) {
-    btnRefreshFiles.addEventListener('click', refreshSidebar);
   }
 
   // Load initial state from localStorage
