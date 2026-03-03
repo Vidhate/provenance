@@ -10,6 +10,7 @@ import { listVaultFiles, isVaultReady, showVaultPicker, requestPermission, getSt
 // Sidebar state
 let isCollapsed = false;
 let currentFilename = null;
+let currentMode = 'editor';
 let onFileSelectCallback = null;
 let onFileSelectForViewerCallback = null;
 let onFileDeleteCallback = null;
@@ -62,6 +63,11 @@ export function initSidebar(options = {}) {
     btnChangeVault.addEventListener('click', handleVaultSetup);
   }
 
+  // Single delegated listener for all file-list interactions
+  if (fileList) {
+    fileList.addEventListener('click', handleFileListClick);
+  }
+
   // Load initial state from localStorage
   const savedCollapsed = localStorage.getItem('provenance-sidebar-collapsed');
   if (savedCollapsed === 'true') {
@@ -70,6 +76,36 @@ export function initSidebar(options = {}) {
   }
 
   console.log('Sidebar initialized');
+}
+
+/**
+ * Delegated click handler for the entire file list.
+ * Using delegation avoids re-attaching listeners on every render.
+ */
+function handleFileListClick(e) {
+  const btn = e.target.closest('.file-delete-btn');
+  if (btn) {
+    e.stopPropagation();
+    const filename = btn.dataset.filename;
+    const file = cachedFiles.find(f => f.name === filename);
+    if (file && onFileDeleteCallback) {
+      onFileDeleteCallback(file.handle, file.name);
+    }
+    return;
+  }
+
+  const item = e.target.closest('.file-item');
+  if (item) {
+    const filename = item.dataset.filename;
+    const file = cachedFiles.find(f => f.name === filename);
+    if (file) {
+      if (currentMode === 'viewer' && onFileSelectForViewerCallback) {
+        onFileSelectForViewerCallback(file.handle, file.name);
+      } else if (onFileSelectCallback) {
+        onFileSelectCallback(file.handle, file.name);
+      }
+    }
+  }
 }
 
 /**
@@ -149,7 +185,9 @@ async function handleVaultSetup() {
 }
 
 /**
- * Refresh the file list from vault
+ * Refresh the file list from vault.
+ * On routine refreshes (list already populated) skips the loading state
+ * entirely so the sidebar never blinks in and out.
  */
 export async function refreshSidebar() {
   if (!isVaultReady()) {
@@ -167,8 +205,14 @@ export async function refreshSidebar() {
     }
   }
 
+  // Only show the loading spinner on the very first load when no items exist yet.
+  // Subsequent autosave-triggered refreshes patch the DOM in-place without hiding anything.
+  const hasExistingItems = fileList && fileList.querySelector('.file-item') !== null;
+
   try {
-    showLoading();
+    if (!hasExistingItems) {
+      showLoading();
+    }
     const files = await listVaultFiles();
     renderFileList(files);
     hideLoading();
@@ -181,15 +225,20 @@ export async function refreshSidebar() {
 }
 
 /**
- * Render the file list in the sidebar
+ * Render (or patch) the file list in the sidebar.
+ * Uses a diffed DOM update strategy: existing items are updated in-place,
+ * new items are inserted, and removed items are deleted — without touching
+ * the rest of the list. This eliminates the blink caused by full innerHTML
+ * replacement on every autosave.
+ *
  * @param {Array} files - Array of file info objects
  * @param {string} mode - 'editor' or 'viewer' mode
  */
-export function renderFileList(files, mode = 'editor') {
+export function renderFileList(files, mode = currentMode) {
   if (!fileList) return;
 
-  // Cache files for potential re-rendering
   cachedFiles = files;
+  currentMode = mode;
 
   if (files.length === 0) {
     fileList.innerHTML = `
@@ -201,57 +250,82 @@ export function renderFileList(files, mode = 'editor') {
     return;
   }
 
-  fileList.innerHTML = files.map(file => `
-    <li class="file-item ${file.name === currentFilename ? 'active' : ''}"
-        data-filename="${escapeHtml(file.name)}">
-      <div class="file-icon">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm5.5 0v3a1.5 1.5 0 0 0 1.5 1.5h3"/>
-        </svg>
-      </div>
-      <div class="file-info">
-        <span class="file-title">${escapeHtml(file.title)}</span>
-        <span class="file-date">${formatDate(file.lastModified)}</span>
-      </div>
-      <button class="file-delete-btn" title="Delete document" data-filename="${escapeHtml(file.name)}">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
-          <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
-        </svg>
-      </button>
-    </li>
-  `).join('');
+  // Remove empty-state placeholder if present
+  const emptyItem = fileList.querySelector('.file-list-empty');
+  if (emptyItem) emptyItem.remove();
 
-  // Add click handlers based on mode
-  fileList.querySelectorAll('.file-item').forEach(item => {
-    // File selection click (on the item itself, not the delete button)
-    item.addEventListener('click', (e) => {
-      // Ignore if clicking on delete button
-      if (e.target.closest('.file-delete-btn')) return;
-
-      const filename = item.dataset.filename;
-      const file = files.find(f => f.name === filename);
-      if (file) {
-        if (mode === 'viewer' && onFileSelectForViewerCallback) {
-          onFileSelectForViewerCallback(file.handle, file.name);
-        } else if (onFileSelectCallback) {
-          onFileSelectCallback(file.handle, file.name);
-        }
-      }
-    });
+  // Index existing items by filename for O(1) lookup
+  const existingItems = new Map();
+  fileList.querySelectorAll('.file-item[data-filename]').forEach(item => {
+    existingItems.set(item.dataset.filename, item);
   });
 
-  // Add delete button handlers
-  fileList.querySelectorAll('.file-delete-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const filename = btn.dataset.filename;
-      const file = files.find(f => f.name === filename);
-      if (file && onFileDeleteCallback) {
-        onFileDeleteCallback(file.handle, file.name);
-      }
-    });
+  // Remove items that are no longer in the file list
+  const newFilenames = new Set(files.map(f => f.name));
+  existingItems.forEach((item, filename) => {
+    if (!newFilenames.has(filename)) {
+      item.remove();
+    }
   });
+
+  // Update existing items in-place or create new ones, then enforce order
+  files.forEach((file, index) => {
+    const isActive = file.name === currentFilename;
+    let item = existingItems.get(file.name);
+
+    if (item) {
+      // Patch only what changed — avoid touching the DOM if nothing is different
+      item.classList.toggle('active', isActive);
+
+      const titleEl = item.querySelector('.file-title');
+      const dateEl = item.querySelector('.file-date');
+      const newDate = formatDate(file.lastModified);
+
+      if (titleEl && titleEl.textContent !== file.title) {
+        titleEl.textContent = file.title;
+      }
+      if (dateEl && dateEl.textContent !== newDate) {
+        dateEl.textContent = newDate;
+      }
+    } else {
+      // Create a fresh item (event listeners are handled by delegation)
+      item = createFileItem(file, isActive);
+    }
+
+    // Maintain sort order without moving items that are already in the right position
+    const nodeAtIndex = fileList.children[index];
+    if (nodeAtIndex !== item) {
+      fileList.insertBefore(item, nodeAtIndex || null);
+    }
+  });
+}
+
+/**
+ * Create a new file list item element.
+ * Does NOT attach any event listeners — the delegated listener on fileList handles all clicks.
+ */
+function createFileItem(file, isActive) {
+  const li = document.createElement('li');
+  li.className = `file-item${isActive ? ' active' : ''}`;
+  li.dataset.filename = file.name;
+  li.innerHTML = `
+    <div class="file-icon">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm5.5 0v3a1.5 1.5 0 0 0 1.5 1.5h3"/>
+      </svg>
+    </div>
+    <div class="file-info">
+      <span class="file-title">${escapeHtml(file.title)}</span>
+      <span class="file-date">${formatDate(file.lastModified)}</span>
+    </div>
+    <button class="file-delete-btn" title="Delete document" data-filename="${escapeHtml(file.name)}">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+        <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+      </svg>
+    </button>
+  `;
+  return li;
 }
 
 /**
@@ -259,6 +333,8 @@ export function renderFileList(files, mode = 'editor') {
  * @param {string} mode - 'editor' or 'viewer'
  */
 export function setFileListMode(mode) {
+  currentMode = mode;
+  // Re-render to apply active-state and order — fully in-place, no flash
   if (cachedFiles.length > 0) {
     renderFileList(cachedFiles, mode);
   }
