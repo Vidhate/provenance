@@ -9,6 +9,12 @@ import { validate, getStatistics } from '../../core/format.js';
 import { runPostProcessing } from '../../core/postprocess.js';
 import { buildCumulativeWritingTimes } from '../../core/playbackTime.js';
 
+// Playback constants
+const FIXED_REPLAY_SPEED = 8;      // Divisor applied to real inter-event gaps
+const MAX_INTER_EVENT_DELAY = 400; // ms — cap for normal (non-pause) delays
+const MIN_DELAY = 10;              // ms — minimum delay between events
+const PAUSE_THRESHOLD_MS = 10000;  // 10 s — gaps longer than this are skipped with a toast
+
 // State
 let currentDocument = null;
 let allEvents = [];
@@ -17,20 +23,14 @@ let cumulativeTimes = []; // Cumulative writing time (ms) at each event index
 let totalWritingTime = 0; // Total cumulative writing time (ms)
 let currentEventIndex = 0;
 let isPlaying = false;
-let playbackSpeed = 5;
 let playbackTimer = null;
 let replayContent = '';
 let replayOrigins = []; // Parallel array: 'composed' | 'imported' per character
 let replayDeletedContent = ''; // Accumulates deleted text within session for cut+paste detection
 
-// Speed steps for +/- control
-const SPEED_STEPS = [1, 2, 5, 10, 50];
-let speedIndex = 2; // Default to 5x
-
 // DOM Elements
 let viewerEmpty, viewerContent, viewerTitle;
 let verificationStatus, btnPlay, btnPause, btnReset;
-let btnSpeedUp, btnSpeedDown, speedDisplay;
 let replayProgress, replayTime;
 let replayEditor, eventIndicator;
 let statWritingTime, statOriginalPct;
@@ -48,9 +48,6 @@ export function initViewer() {
   btnPlay = document.getElementById('btn-play');
   btnPause = document.getElementById('btn-pause');
   btnReset = document.getElementById('btn-reset');
-  btnSpeedDown = document.getElementById('btn-speed-down');
-  btnSpeedUp = document.getElementById('btn-speed-up');
-  speedDisplay = document.getElementById('replay-speed');
   replayProgress = document.getElementById('replay-progress');
   replayTime = document.getElementById('replay-time');
   replayEditor = document.getElementById('replay-editor');
@@ -66,8 +63,6 @@ export function initViewer() {
   btnPlay.addEventListener('click', startPlayback);
   btnPause.addEventListener('click', pausePlayback);
   btnReset.addEventListener('click', resetPlayback);
-  btnSpeedDown.addEventListener('click', decreaseSpeed);
-  btnSpeedUp.addEventListener('click', increaseSpeed);
   replayProgress.addEventListener('input', handleProgressSeek);
   btnToggleDetails.addEventListener('click', toggleDetails);
 }
@@ -299,7 +294,14 @@ function resetPlayback() {
 }
 
 /**
- * Schedule the next event in playback
+ * Schedule the next event in playback.
+ *
+ * Intra-session pauses longer than PAUSE_THRESHOLD_MS are always skipped
+ * and announced with a "SKIPPED Xs RUMINATION" toast. Inter-session gaps
+ * are left to the existing SESSION STARTED toast (fired by applyEvent when
+ * it processes the session_start event) and receive no rumination toast.
+ * All other delays are scaled by FIXED_REPLAY_SPEED and capped at
+ * MAX_INTER_EVENT_DELAY.
  */
 function scheduleNextEvent() {
   if (!isPlaying || currentEventIndex >= flatEvents.length) {
@@ -319,23 +321,21 @@ function scheduleNextEvent() {
 
   currentEventIndex++;
 
-  // Schedule next event
   if (nextEvent && isPlaying) {
-    let delay = nextEvent.timestamp - currentEvent.timestamp;
+    const realGap = nextEvent.timestamp - currentEvent.timestamp;
+    let delay;
 
-    // Apply speed multiplier
-    delay = delay / playbackSpeed;
+    const isInterSessionGap = nextEvent.type === 'session_start';
 
-    // Cap maximum delay (for long pauses)
-    if (playbackSpeed >= 50) {
-      // "Skip pauses" mode
-      delay = Math.min(delay, 50);
+    if (realGap > PAUSE_THRESHOLD_MS && !isInterSessionGap) {
+      // Skip this intra-session pause and show a rumination toast
+      delay = MIN_DELAY;
+      showEventIndicator(`Skipped ${formatPauseDuration(realGap)} Rumination`, 'pause');
     } else {
-      delay = Math.min(delay, 2000 / playbackSpeed);
+      // Normal delay — scale by fixed speed and cap
+      delay = Math.min(realGap / FIXED_REPLAY_SPEED, MAX_INTER_EVENT_DELAY);
+      delay = Math.max(delay, MIN_DELAY);
     }
-
-    // Minimum delay for visibility
-    delay = Math.max(delay, 10);
 
     playbackTimer = setTimeout(scheduleNextEvent, delay);
   }
@@ -379,7 +379,7 @@ function applyEvent(event) {
         replayContent = before + event.content + after;
         const markers = new Array(event.content.length).fill(marker);
         replayOrigins.splice(event.position, 0, ...markers);
-        showEventIndicator(`Pasted ${event.content.length} chars`, 'paste', playbackSpeed);
+        showEventIndicator(`Pasted ${event.content.length} chars`, 'paste');
       }
       break;
 
@@ -400,7 +400,7 @@ function applyEvent(event) {
         const sessionNum = currentDocument
           ? currentDocument.sessions.findIndex(s => s.id === event.sessionId) + 1
           : 0;
-        showEventIndicator(`Session ${sessionNum} Started`, 'session', playbackSpeed);
+        showEventIndicator(`Session ${sessionNum} Started`, 'session');
       }
       break;
 
@@ -489,34 +489,15 @@ function seekToEvent(targetIndex) {
 }
 
 /**
- * Increase playback speed
+ * Format a pause duration for the rumination toast.
+ * e.g. 45 000 ms → "45s", 203 000 ms → "3m 23s"
  */
-function increaseSpeed() {
-  if (speedIndex < SPEED_STEPS.length - 1) {
-    speedIndex++;
-    playbackSpeed = SPEED_STEPS[speedIndex];
-    updateSpeedDisplay();
-  }
-}
-
-/**
- * Decrease playback speed
- */
-function decreaseSpeed() {
-  if (speedIndex > 0) {
-    speedIndex--;
-    playbackSpeed = SPEED_STEPS[speedIndex];
-    updateSpeedDisplay();
-  }
-}
-
-/**
- * Update speed display text
- */
-function updateSpeedDisplay() {
-  if (speedDisplay) {
-    speedDisplay.textContent = `${playbackSpeed}x`;
-  }
+function formatPauseDuration(ms) {
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
 /**
@@ -596,20 +577,16 @@ function escapeHtml(text) {
  * Spawns a new element each time so multiple toasts can coexist.
  *
  * @param {string} text - Display text
- * @param {string} type - CSS modifier class ('paste' | 'session')
- * @param {number} speed - Current playback speed (controls fade duration)
+ * @param {string} type - CSS modifier class ('paste' | 'session' | 'pause')
  */
-function showEventIndicator(text, type, speed) {
+function showEventIndicator(text, type) {
   const container = eventIndicator.parentElement;
   if (!container) return;
 
   const toast = document.createElement('div');
   toast.className = `event-toast ${type}`;
   toast.textContent = text;
-
-  // Speed-aware duration: 3s for ≤5x, 1.5s for >5x
-  const duration = speed > 5 ? 1500 : 3000;
-  toast.style.animationDuration = `${duration}ms`;
+  toast.style.animationDuration = '2000ms';
 
   container.appendChild(toast);
 

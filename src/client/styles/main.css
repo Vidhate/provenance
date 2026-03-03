@@ -884,42 +884,6 @@ body {
   cursor: not-allowed;
 }
 
-/* Speed control with +/- buttons */
-.speed-control {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: var(--text-secondary);
-}
-
-.speed-btn {
-  width: 26px;
-  height: 26px;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.speed-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.speed-display {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  min-width: 2.5rem;
-  text-align: center;
-  letter-spacing: 0.05em;
-}
 
 .progress-container {
   flex: 1;
@@ -1022,6 +986,12 @@ body {
 .event-toast.session {
   background: var(--accent);
   color: var(--bg-primary);
+}
+
+.event-toast.pause {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 
 
