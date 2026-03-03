@@ -143,6 +143,9 @@ body {
   padding: 1rem;
   border-top: 1px solid var(--border);
   transition: opacity var(--sidebar-transition);
+}
+
+#btn-change-vault {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
