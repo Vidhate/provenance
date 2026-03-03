@@ -25,7 +25,7 @@ let currentFilename = null;
 // DOM Elements
 let navEditor, navViewer, editorView, viewerView, recordingStatus, docTitle;
 let btnNew, fileInput;
-let charCount, wordCount, eventCount, sessionTime;
+let charCount, wordCount, eventCount, sessionTime, sessionContext;
 let onboardingModal, btnSkipOnboarding, btnSetupVault;
 let browserWarning, btnDismissWarning;
 
@@ -44,6 +44,9 @@ let isLoadingDocument = false;
 
 // Preserving status
 const PRESERVING_WORD = 'CHRONICLING';
+const IDLE_STATUS_TIMEOUT = 60 * 1000; // 1 minute of idle hides the pulsing status
+let idleStatusTimer = null;
+let isIdleDisplay = false; // When true, session timer display is frozen and shows IDLE
 
 /**
  * Initialize the application
@@ -124,6 +127,7 @@ function getDOMElements() {
   wordCount = document.getElementById('word-count');
   eventCount = document.getElementById('event-count');
   sessionTime = document.getElementById('session-time');
+  sessionContext = document.getElementById('session-context');
   onboardingModal = document.getElementById('onboarding-modal');
   btnSkipOnboarding = document.getElementById('btn-skip-onboarding');
   btnSetupVault = document.getElementById('btn-setup-vault');
@@ -358,6 +362,8 @@ async function switchView(view) {
 function startPreservingStatus() {
   recordingStatus.textContent = PRESERVING_WORD;
   recordingStatus.classList.add('preserving');
+  // Resume live session timer display if it was frozen due to idle
+  isIdleDisplay = false;
 }
 
 /**
@@ -366,6 +372,30 @@ function startPreservingStatus() {
 function stopPreservingStatus() {
   recordingStatus.textContent = '';
   recordingStatus.classList.remove('preserving');
+  if (workHasBegun) {
+    // Idle during an active session — freeze the timer display and show IDLE
+    isIdleDisplay = true;
+    if (sessionTime) sessionTime.textContent = 'IDLE';
+  } else {
+    // Session ended normally — clear the idle display flag
+    isIdleDisplay = false;
+  }
+}
+
+/**
+ * Reset the idle status timer.
+ * After IDLE_STATUS_TIMEOUT ms of no edits the pulsing indicator is hidden.
+ * The recording session continues unaffected.
+ */
+function resetIdleStatusTimer() {
+  if (idleStatusTimer) {
+    clearTimeout(idleStatusTimer);
+  }
+  idleStatusTimer = setTimeout(() => {
+    if (workHasBegun) {
+      stopPreservingStatus();
+    }
+  }, IDLE_STATUS_TIMEOUT);
 }
 
 /**
@@ -374,6 +404,12 @@ function stopPreservingStatus() {
  */
 async function closeCurrentSession() {
   if (!workHasBegun) return;
+
+  // Cancel any pending idle-status timer
+  if (idleStatusTimer) {
+    clearTimeout(idleStatusTimer);
+    idleStatusTimer = null;
+  }
 
   // End the session in the recorder
   await recorder.endSession();
@@ -487,11 +523,25 @@ async function handleEditorChange(content) {
     // Update UI to show preserving status
     startPreservingStatus();
 
+    // Re-render the status bar now that workHasBegun is true so the session context
+    // label ("Prior Session" → "This Session"), event count, and CHRONICLING indicator
+    // all reflect the same state at the same moment.
+    updateStatusBar();
+
     // Auto-create file in vault if ready (only for new documents)
     if (pendingAutoCreate && isVaultReady()) {
       pendingAutoCreate = false;
       await autoCreateFile();
     }
+  }
+
+  // While recording is active, manage the idle-status timer.
+  // Re-show the indicator if it was hidden after an idle period.
+  if (workHasBegun) {
+    if (!recordingStatus.classList.contains('preserving')) {
+      startPreservingStatus();
+    }
+    resetIdleStatusTimer();
   }
 
   // Schedule autosave if we have a file handle AND work has begun
@@ -507,9 +557,44 @@ function updateStatusBar() {
   const content = getEditorContent();
   const events = getRecordedEvents();
 
+  // char/word counts always reflect the current editor content regardless of session state
   charCount.textContent = `${content.length} characters`;
   wordCount.textContent = `${countWords(content)} words`;
-  eventCount.textContent = `${events ? events.length : 0} events recorded`;
+
+  if (workHasBegun) {
+    // Live session — pull event count from the active recorder.
+    // sessionTime is kept current by the startSessionTimer interval.
+    eventCount.textContent = `${events ? events.length : 0} events recorded`;
+    if (sessionContext) {
+      sessionContext.textContent = 'This Session';
+      sessionContext.className = 'session-context-label live';
+    }
+  } else if (currentFilename && currentDocument) {
+    // Existing file loaded, editing not yet started — show the last recorded session's stats
+    // so the numbers are meaningful rather than showing 0 events / 0:00.
+    const lastSession = currentDocument.sessions?.[currentDocument.sessions.length - 1];
+    if (lastSession) {
+      const priorEventCount = lastSession.events?.length ?? 0;
+      const priorDuration = new Date(lastSession.endTime) - new Date(lastSession.startTime);
+      eventCount.textContent = `${priorEventCount} events recorded`;
+      sessionTime.textContent = `Session: ${formatTime(priorDuration)}`;
+    } else {
+      eventCount.textContent = '0 events recorded';
+      sessionTime.textContent = 'Session: 0:00';
+    }
+    if (sessionContext) {
+      sessionContext.textContent = 'Prior Session';
+      sessionContext.className = 'session-context-label prior';
+    }
+  } else {
+    // Brand new document, nothing recorded yet
+    eventCount.textContent = '0 events recorded';
+    sessionTime.textContent = 'Session: 0:00';
+    if (sessionContext) {
+      sessionContext.textContent = '';
+      sessionContext.className = 'session-context-label';
+    }
+  }
 }
 
 /**
@@ -525,7 +610,7 @@ function countWords(text) {
  */
 function startSessionTimer() {
   sessionTimer = setInterval(() => {
-    if (sessionStartTime) {
+    if (sessionStartTime && !isIdleDisplay) {
       const elapsed = Date.now() - sessionStartTime;
       sessionTime.textContent = `Session: ${formatTime(elapsed)}`;
     }
