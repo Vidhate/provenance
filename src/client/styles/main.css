@@ -960,7 +960,7 @@ body {
   letter-spacing: 0.08em;
   white-space: nowrap;
   pointer-events: none;
-  animation: toast-float-fade 1200ms ease-out forwards;
+  animation: toast-float-fade 2800ms ease-out forwards;
 }
 
 @keyframes toast-float-fade {
@@ -968,15 +968,21 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
-  20% {
-    /* Blast upward fast in the first 20% — clears the spawn zone quickly
-       so the next toast in a rapid burst is immediately readable */
-    opacity: 0.95;
+  15% {
+    /* Blast upward fast in the first 15% (~420ms) — clears the spawn zone
+       so the next burst toast is immediately readable in the same spot */
+    opacity: 1;
     transform: translateY(-4rem);
   }
+  60% {
+    /* Hold near full opacity through the middle — this is the reading window */
+    opacity: 0.9;
+    transform: translateY(-7rem);
+  }
   100% {
+    /* Fade out in the final 40% while continuing to rise */
     opacity: 0;
-    transform: translateY(-10rem);
+    transform: translateY(-11rem);
   }
 }
 

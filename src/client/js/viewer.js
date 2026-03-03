@@ -586,7 +586,7 @@ function showEventIndicator(text, type) {
   const toast = document.createElement('div');
   toast.className = `event-toast ${type}`;
   toast.textContent = text;
-  toast.style.animationDuration = '1200ms';
+  toast.style.animationDuration = '2800ms';
 
   container.appendChild(toast);
 
