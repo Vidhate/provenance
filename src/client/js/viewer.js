@@ -27,6 +27,7 @@ let playbackTimer = null;
 let replayContent = '';
 let replayOrigins = []; // Parallel array: 'composed' | 'imported' per character
 let replayDeletedContent = ''; // Accumulates deleted text within session for cut+paste detection
+let lastChangePosition = 0; // Character offset of the most recent insert/delete/paste
 
 // DOM Elements
 let viewerEmpty, viewerContent, viewerTitle;
@@ -286,6 +287,7 @@ function resetPlayback() {
   replayContent = '';
   replayOrigins = [];
   replayDeletedContent = '';
+  lastChangePosition = 0;
   replayEditor.innerHTML = '';
   replayProgress.value = 0;
   updateTimeDisplay();
@@ -353,6 +355,7 @@ function applyEvent(event) {
         replayContent = before + event.content + after;
         const composedMarkers = new Array(event.content.length).fill('composed');
         replayOrigins.splice(event.position, 0, ...composedMarkers);
+        lastChangePosition = event.position + event.content.length;
       }
       break;
 
@@ -365,6 +368,7 @@ function applyEvent(event) {
         const after = replayContent.substring(event.position + deleteLength);
         replayContent = before + after;
         replayOrigins.splice(event.position, deleteLength);
+        lastChangePosition = event.position;
       }
       break;
 
@@ -380,6 +384,7 @@ function applyEvent(event) {
         const markers = new Array(event.content.length).fill(marker);
         replayOrigins.splice(event.position, 0, ...markers);
         showEventIndicator(`Pasted ${event.content.length} chars`, 'paste');
+        lastChangePosition = event.position + event.content.length;
       }
       break;
 
@@ -395,6 +400,8 @@ function applyEvent(event) {
         }
         replayDeletedContent = '';
       }
+      // Reset cursor to top of document on session start
+      lastChangePosition = 0;
       // Determine session number from document
       {
         const sessionNum = currentDocument
@@ -408,11 +415,8 @@ function applyEvent(event) {
       break;
   }
 
-  // Update display with paste highlighting
+  // Update display with paste highlighting and scroll to where the edit happened
   renderReplayContent();
-
-  // Scroll to bottom if content is long
-  replayEditor.scrollTop = replayEditor.scrollHeight;
 
   // Update the active session marker in the timeline
   updateActiveSessionMarker();
@@ -424,10 +428,12 @@ function applyEvent(event) {
 function seekToEvent(targetIndex) {
   pausePlayback();
 
-  // Rebuild content, origins, and deletedContent up to target event
+  // Rebuild content, origins, deletedContent, and lastChangePosition up to target event
   replayContent = '';
   replayOrigins = [];
   replayDeletedContent = '';
+  let seekPosition = 0;
+
   for (let i = 0; i <= targetIndex; i++) {
     const event = flatEvents[i];
 
@@ -444,6 +450,7 @@ function seekToEvent(targetIndex) {
           }
           replayDeletedContent = '';
         }
+        seekPosition = 0;
         break;
 
       case 'insert':
@@ -453,6 +460,7 @@ function seekToEvent(targetIndex) {
           replayContent = before + event.content + after;
           const composedMarkers = new Array(event.content.length).fill('composed');
           replayOrigins.splice(event.position, 0, ...composedMarkers);
+          seekPosition = event.position + event.content.length;
         }
         break;
 
@@ -465,6 +473,7 @@ function seekToEvent(targetIndex) {
           replayContent = before + event.content + after;
           const markers = new Array(event.content.length).fill(marker);
           replayOrigins.splice(event.position, 0, ...markers);
+          seekPosition = event.position + event.content.length;
         }
         break;
 
@@ -476,11 +485,13 @@ function seekToEvent(targetIndex) {
           const after = replayContent.substring(event.position + deleteLength);
           replayContent = before + after;
           replayOrigins.splice(event.position, deleteLength);
+          seekPosition = event.position;
         }
         break;
     }
   }
 
+  lastChangePosition = seekPosition;
   currentEventIndex = targetIndex;
   renderReplayContent();
   replayProgress.value = targetIndex;
@@ -527,9 +538,11 @@ function updateTimeDisplay() {
 }
 
 /**
- * Render replay content with paste highlighting.
+ * Render replay content with paste highlighting and cursor tracking.
  * Builds HTML from replayContent + replayOrigins, wrapping contiguous
- * pasted regions in <span class="pasted-content"> for visual distinction.
+ * pasted regions in <span class="imported-content"> for visual distinction.
+ * Injects a zero-size <span class="replay-cursor-marker"> at lastChangePosition
+ * so the viewport can follow where actual edits are happening via scrollIntoView.
  */
 function renderReplayContent() {
   if (replayContent.length === 0) {
@@ -537,16 +550,30 @@ function renderReplayContent() {
     return;
   }
 
-  // Build HTML by grouping contiguous runs of same origin
+  const cursorPos = Math.min(lastChangePosition, replayContent.length);
+  const CURSOR_MARKER = '<span class="replay-cursor-marker"></span>';
+  let cursorInserted = false;
+
+  // Build HTML by grouping contiguous runs of same origin,
+  // breaking at cursorPos so the marker lands at the right character boundary.
   let html = '';
   let i = 0;
   while (i < replayContent.length) {
+    // Emit cursor marker at cursorPos (before the character at this position)
+    if (!cursorInserted && i === cursorPos) {
+      html += CURSOR_MARKER;
+      cursorInserted = true;
+    }
+
     const origin = replayOrigins[i] || 'composed';
     let j = i;
-    // Find end of contiguous run with same origin
+    // Find end of contiguous run with same origin —
+    // always break at cursorPos so the marker insertion point is respected
     while (j < replayContent.length && (replayOrigins[j] || 'composed') === origin) {
+      if (!cursorInserted && j === cursorPos) break;
       j++;
     }
+
     const segment = replayContent.substring(i, j);
     const escaped = escapeHtml(segment);
     if (origin === 'imported') {
@@ -557,7 +584,18 @@ function renderReplayContent() {
     i = j;
   }
 
+  // Cursor at or beyond end of content
+  if (!cursorInserted) {
+    html += CURSOR_MARKER;
+  }
+
   replayEditor.innerHTML = html;
+
+  // Scroll the cursor marker into view so the viewport follows where edits happen
+  const marker = replayEditor.querySelector('.replay-cursor-marker');
+  if (marker) {
+    marker.scrollIntoView({ block: 'center', behavior: 'instant' });
+  }
 }
 
 /**

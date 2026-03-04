@@ -942,6 +942,15 @@ body {
   padding: 0 1px;
 }
 
+/* Zero-size scroll anchor — invisible, just used for scrollIntoView during replay */
+.replay-cursor-marker {
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+  pointer-events: none;
+}
+
 /* Hidden anchor for toast positioning — not displayed itself */
 .event-indicator {
   display: none;
