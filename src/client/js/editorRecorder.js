@@ -52,52 +52,22 @@ async function handleEditorInput(event) {
 
   const { inputType, data, value, selectionStart } = event.detail;
 
-  // Determine what changed
-  const oldContent = lastContent;
-  const newContent = value;
+  // Update lastContent synchronously before any await to prevent stale reads
+  // when multiple events fire in rapid succession (e.g. autocorrect + keystroke).
+  lastContent = value;
 
-  if (newContent.length > oldContent.length) {
-    // Content was added (insert)
-    const insertedLength = newContent.length - oldContent.length;
-    const insertPosition = selectionStart - insertedLength;
-    const insertedContent = newContent.substring(insertPosition, selectionStart);
-
-    // Don't record paste events here - they're handled separately
-    if (inputType !== 'insertFromPaste') {
-      await recorder.recordInsert(insertPosition, insertedContent);
+  if (inputType === 'deleteContentBackward' || inputType === 'deleteContentForward') {
+    // editor.js passes the exact deleted text as `data`
+    if (data) {
+      await recorder.recordDelete(selectionStart, data);
     }
-  } else if (newContent.length < oldContent.length) {
-    // Content was removed (delete)
-    const deletedLength = oldContent.length - newContent.length;
-    const deletePosition = selectionStart;
-
-    // Find what was deleted
-    const deletedContent = findDeletedContent(oldContent, newContent, deletePosition, deletedLength);
-
-    await recorder.recordDelete(deletePosition, deletedContent);
+  } else if (inputType !== 'insertFromPaste') {
+    // editor.js passes the exact inserted text as `data`
+    if (data) {
+      const insertPosition = selectionStart - data.length;
+      await recorder.recordInsert(insertPosition, data);
+    }
   }
-
-  lastContent = newContent;
-}
-
-/**
- * Find what content was deleted
- */
-function findDeletedContent(oldContent, newContent, position, length) {
-  // Try to find the deleted portion by comparing strings
-  // This is a simplified approach - in production we might want more sophisticated diffing
-
-  // Check if deletion was at cursor position (backspace/delete key)
-  const beforeCursor = oldContent.substring(0, position);
-  const afterCursor = oldContent.substring(position + length);
-
-  // Verify our assumption
-  if (beforeCursor + afterCursor === newContent) {
-    return oldContent.substring(position, position + length);
-  }
-
-  // Fallback: just note the length
-  return `[${length} chars]`;
 }
 
 /**

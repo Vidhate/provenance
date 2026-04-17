@@ -361,7 +361,10 @@ function applyEvent(event) {
 
     case 'delete':
       if (event.content) {
-        const deleteLength = event.content.length;
+        // Handle legacy [N chars] placeholder produced by old recording bug:
+        // the placeholder string length doesn't match the actual deletion count.
+        const legacyMatch = event.content.match(/^\[(\d+) chars\]$/);
+        const deleteLength = legacyMatch ? parseInt(legacyMatch[1], 10) : event.content.length;
         // Accumulate deleted content for cut+paste detection
         replayDeletedContent += replayContent.substring(event.position, event.position + deleteLength);
         const before = replayContent.substring(0, event.position);
@@ -479,7 +482,8 @@ function seekToEvent(targetIndex) {
 
       case 'delete':
         if (event.content) {
-          const deleteLength = event.content.length;
+          const legacyMatch = event.content.match(/^\[(\d+) chars\]$/);
+          const deleteLength = legacyMatch ? parseInt(legacyMatch[1], 10) : event.content.length;
           replayDeletedContent += replayContent.substring(event.position, event.position + deleteLength);
           const before = replayContent.substring(0, event.position);
           const after = replayContent.substring(event.position + deleteLength);
