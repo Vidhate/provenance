@@ -182,11 +182,11 @@ Branch from `main` for features (`feature/name`) and fixes (`fix/name`).
 
 ## License
 
-Licensed under the [Business Source License 1.1](LICENSE).
+Licensed under the [Business Source License 1.1](LICENSE) · © 2024 Aditya Vidhate
 
-Free for non-production use (development, research, personal projects). Commercial production use requires a license.
+Free for non-production use: development, research, personal projects, and internal business use. You may not offer Provenance or a substantially similar service to third parties on a commercial basis without a license.
 
-Automatically converts to **Apache 2.0** on February 18, 2030.
+Automatically converts to **Apache 2.0 on February 18, 2030**, at which point it becomes fully open source.
 
 ---
 
