@@ -1,131 +1,114 @@
 # Provenance
 
-**Prove your writing is human-crafted with verifiable proof of the creative process.**
+**Irrefutable proof that writing was created by a human, through an authentic human process.**
+
+[**Try the demo →**](https://provenance-sand.vercel.app) &nbsp;·&nbsp; [BSL 1.1 License](LICENSE)
 
 ---
 
-## Why Provenance Exists
+## The Problem
 
-AI can now generate text indistinguishable from human writing. Readers can't tell what's real. Writers who do the work have no way to prove it. AI detectors are unreliable and easily fooled -- they analyze the *output*, but the output isn't what makes human writing human.
+AI can now generate text indistinguishable from human writing in quality. Detectors don't work — they analyze the output, but the output isn't what makes human writing human.
 
-The things that make AI effective -- speed and precision -- are the opposite of what makes human writing human: the pondering, the false starts, the typos corrected, the paragraph rewritten three times at 2am.
+Writers who do the real work have no way to prove it. Readers have no way to know.
 
-Provenance captures that process. Every keystroke, every pause, every deletion. The result is a `.provenance` file -- a portable, tamper-resistant proof that a human sat down and wrote something.
+## The Insight
 
-Think of it like a live concert recording. Studio albums may be technically "better," but there's something irreplaceable about proof that a human actually performed it.
+Speed and single-burst generation are what make AI effective. Mistakes, creative detours, and rumination are what make us human.
 
----
+When a person writes something real, they don't produce it in one clean pass. They stop mid-sentence to think. They delete a paragraph and rewrite it from a different angle. They walk away, come back two days later, restructure the whole thing. They mistype, reconsider, get stuck, push through. That messy, nonlinear process is the signature of authentic thought — and it's nearly impossible to fake convincingly at scale.
+
+Provenance captures that process. The proof isn't the writing. It's the *journey*.
+
+> Think of it like a live concert. Studio recordings may be technically perfect, but there's something irreplaceable about proof that a human actually performed it — in time, with friction.
 
 ## How It Works
 
-### Writing
+Every keystroke, pause, deletion, and revision is recorded with precise timestamps as you write. When you're done, you export a `.provenance` file — a portable, self-contained artifact containing the complete record of how the document came to exist.
 
-1. Open Provenance in your browser (it runs locally on your machine)
-2. Write in the markdown editor -- it works like any other editor
-3. In the background, every input event is recorded with precise timestamps
+Anyone can load that file and watch the writing unfold: the false starts, the long pauses mid-paragraph, the sections rewritten from scratch. The replay is the proof.
+
+### For Writers
+
+1. Open Provenance in Chrome or Edge (runs locally — no account, no cloud)
+2. Write normally in the markdown editor
+3. Every event is recorded in the background with millisecond timestamps
 4. Your work auto-saves to a local vault folder
-5. Come back tomorrow and keep writing -- multi-session documents strengthen the proof
+5. Come back tomorrow and keep writing — multi-session documents strengthen the proof
+6. Export a `.provenance` file to share
 
-### Verifying
+### For Readers
 
-1. Open a `.provenance` file in the Verify tab
-2. Watch the entire writing process replayed -- the thinking, the mistakes, the revisions
-3. See human patterns: typing bursts, long pauses, corrections across sessions
-4. Check the hash chain integrity to confirm nothing was tampered with
-5. See the paste ratio -- how much was composed vs. imported from external sources
+1. Load a `.provenance` file in the Verify tab
+2. Watch the entire writing process replay — including the thinking, the mistakes, the revisions
+3. See human behavioral patterns: typing bursts, long pauses, corrections, session breaks across days
+4. Inspect the hash chain integrity to confirm nothing was tampered with
 
 ### What Makes Forgery Hard
 
-- **Rolling hash chain**: Each event's hash includes the previous event's hash. Modify one event and every subsequent hash breaks.
-- **Behavioral capture**: Timing patterns, pause durations, and error corrections are recorded at millisecond precision.
-- **Multi-day sessions**: Forging a proof would mean "performing" the writing process in real time, across multiple sittings.
-- **Paste detection**: External paste events are flagged and tracked separately from composed content.
+- **Rolling hash chain** — each event's hash includes the previous event's hash. Modify one event and every subsequent hash breaks. No central authority required to verify.
+- **Behavioral capture** — timing patterns, pause durations, and error corrections are recorded at millisecond precision. Human typing is statistically distinctive.
+- **Multi-day sessions** — forging a proof means performing the writing process in real time, across multiple sittings. The longer the document, the harder the forgery.
+- **Paste detection** — external paste events are flagged and tracked separately. Provenance doesn't judge; it makes the record visible.
+
+---
+
+## The `.provenance` Format
+
+A single portable JSON file. No server. No dependency on Provenance's infrastructure. Anyone can verify independently.
+
+```json
+{
+  "version": "1.0.0",
+  "metadata": {
+    "title": "My Essay",
+    "createdAt": "2024-01-15T09:00:00Z",
+    "lastModifiedAt": "2024-01-18T21:45:00Z"
+  },
+  "sessions": [
+    {
+      "id": "session-uuid",
+      "startTime": "2024-01-15T09:00:00Z",
+      "events": [
+        { "type": "insert", "timestamp": 1705312800000, "position": 0, "content": "H", "hash": "abc123" },
+        { "type": "delete", "timestamp": 1705312805000, "position": 0, "length": 1, "hash": "def456" },
+        { "type": "paste",  "timestamp": 1705312900000, "position": 100, "content": "...", "hash": "ghi789" }
+      ]
+    }
+  ],
+  "finalContent": "The complete document...",
+  "contentHash": "sha256-of-final-content"
+}
+```
 
 ---
 
 ## Getting Started
 
-### Requirements
-
-- Node.js v18 or higher
-- npm
-- A modern browser (Chrome or Edge recommended for vault auto-save via File System Access API)
-
-### Install and Run
+**Requirements:** Node.js v18+, npm, Chrome or Edge (for vault auto-save via File System Access API)
 
 ```bash
-git clone https://github.com/AnshumanV/provenance.git
+git clone https://github.com/avidhate/provenance.git
 cd provenance
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser.
+Open `http://localhost:5173`. Select a vault folder when prompted — this is where your `.provenance` files will auto-save every 2 seconds.
 
-### Production Build
-
-```bash
-npm run build
-npm start
-```
-
-Serves the app at `http://localhost:3001`.
-
-### Vault Setup
-
-On first launch, click the vault folder button in the sidebar to select a local directory. All `.provenance` files will be saved here automatically. The vault gives you:
-
-- Auto-save every 2 seconds while editing
-- Click any file in the sidebar to resume editing
-- Rename documents via the title field
-- Files persist across browser sessions
-
-> **Note:** The File System Access API (used for vault) is supported in Chrome and Edge. Other browsers fall back to manual file download.
-
----
-
-## Usage
-
-### Write Tab
-
-Create a new document or open an existing one from the sidebar. The editor supports markdown with a live preview pane. Recording starts automatically on your first keystroke -- no setup needed.
-
-Sessions are tracked automatically. Close the tab or switch documents, and the session ends. Come back later and a new session begins, chaining onto the previous ones.
-
-### Verify Tab
-
-Switch to the Verify tab and click any document in the sidebar. You'll see:
-
-- **Replay controls**: Play, pause, speed (1x/2x/5x), skip pauses
-- **Hash chain status**: Verified or broken
-- **Paste ratio**: Percentage of content that was pasted from external sources vs. composed in the editor
-- **Session timeline**: Visual markers for session breaks, paste events, and long pauses
-
----
-
-## The .provenance File
-
-A `.provenance` file is a self-contained JSON document with:
-
-- **Metadata**: Title, creation date, editor version
-- **Sessions**: One per writing sitting, each containing timestamped events
-- **Events**: `insert`, `delete`, `paste`, `session_start`, `session_end` -- each with timestamps and positions
-- **Hash chain**: Rolling SHA-256 hashes linking every event to the one before it
-- **Final content**: The completed document text
-
-The file is portable. Share it with anyone and they can load it into Provenance to verify the writing process independently.
+Or skip the install and use the [hosted demo](https://provenance-sand.vercel.app).
 
 ---
 
 ## Commands
 
 ```bash
-npm run dev           # Start development server (port 5173)
-npm run build         # Build for production
-npm start             # Run production server (port 3001)
-npm test              # Run tests (watch mode)
-npm run test:run      # Run tests (single run)
-npm run test:coverage # Run tests with coverage report
+npm run dev           # Development server (port 5173)
+npm run build         # Production build
+npm start             # Production server (port 3001)
+npm test              # Tests in watch mode
+npm run test:run      # Single test run
+npm run test:coverage # Coverage report
 ```
 
 ---
@@ -136,50 +119,61 @@ npm run test:coverage # Run tests with coverage report
 provenance/
 ├── src/
 │   ├── client/
-│   │   ├── index.html              # Main HTML
-│   │   ├── styles/main.css         # Styles
+│   │   ├── index.html
+│   │   ├── styles/main.css
 │   │   └── js/
 │   │       ├── app.js              # Application orchestrator
 │   │       ├── editor.js           # CodeMirror 6 editor
-│   │       ├── editorRecorder.js   # Editor-to-recorder bridge
-│   │       ├── viewer.js           # Replay viewer
-│   │       ├── vault.js            # File System Access API
-│   │       ├── sidebar.js          # Sidebar UI
-│   │       └── autosave.js         # Auto-save logic
+│   │       ├── editorRecorder.js   # Editor → recorder bridge
+│   │       ├── viewer.js           # Replay with speed controls
+│   │       ├── vault.js            # File System Access API wrapper
+│   │       ├── sidebar.js          # File list UI
+│   │       └── autosave.js         # Interval-based auto-save
 │   ├── server/
 │   │   └── index.js                # Express server
 │   └── core/
 │       ├── recorder.js             # Event recording + hash chain
 │       ├── hasher.js               # SHA-256 rolling hash
-│       ├── format.js               # .provenance file format
+│       ├── format.js               # File format & validation
 │       └── postprocess.js          # Analysis pipeline (paste ratio, etc.)
-├── tests/                          # Test suite (Vitest + jsdom)
-├── package.json
-├── CLAUDE.md                       # Development notes
-└── LICENSE                         # BSL 1.1
+├── tests/                          # Vitest + jsdom
+└── package.json
 ```
+
+**Tech:** Node.js · Express · CodeMirror 6 · Vanilla JS · Vite · Vitest
+
+---
+
+## Roadmap
+
+This is a proof of concept — the core recording and replay loop works end to end. What's next:
+
+- **Statistical fingerprinting** — WPM variance, pause frequency distributions, revision patterns — to generate a quantitative authenticity signal beyond the binary hash check
+- **Verification badge** — an embeddable widget writers can drop on their blog or portfolio that links to the proof, similar to how open source projects display build status
+- **Cryptographic anchoring** — anchor the final hash to a public timestamping service (RFC 3161) to prove the proof itself wasn't fabricated retroactively
+- **Privacy modes** — statistical proof without full replay, for writers who want to verify authenticity without exposing their complete creative process
+- **Platform API** — for publishers and platforms to verify content authenticity at scale
 
 ---
 
 ## Design Principles
 
-- **Local-first**: No cloud, no accounts, no tracking. Writers own their data.
-- **Portable proofs**: A single file contains everything needed for verification.
-- **Process over output**: The proof is the journey, not the destination.
-- **Paste is not cheating**: Writers paste from their own notes, quotes, and references. Provenance flags it transparently and lets readers decide.
+- **Local-first** — no cloud, no accounts, no tracking. Writers own their data and their proof.
+- **Portable proofs** — a single file contains everything needed for independent verification.
+- **Process over output** — the proof is the journey, not the destination.
+- **Paste is not cheating** — writers paste from their own notes, quotes, and references. Provenance flags it transparently and lets readers decide what it means.
 
 ---
 
 ## Contributing
 
-Contributions are welcome. Please follow the project's commit conventions:
+Contributions welcome. Please follow conventional commits:
 
 ```
 feat: description     # New features
 fix: description      # Bug fixes
 refactor: description # Code restructuring
 docs: description     # Documentation
-chore: description    # Maintenance
 ```
 
 Branch from `main` for features (`feature/name`) and fixes (`fix/name`).
@@ -190,8 +184,10 @@ Branch from `main` for features (`feature/name`) and fixes (`fix/name`).
 
 Licensed under the [Business Source License 1.1](LICENSE).
 
-You can use, modify, and share this software freely for non-production purposes (development, testing, personal use, education). Production use in a commercial product or service requires a commercial license.
+Free for non-production use (development, research, personal projects). Commercial production use requires a license.
 
-On **February 18, 2030**, the license automatically converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0), making it fully open source.
+Automatically converts to **Apache 2.0** on February 18, 2030.
 
-See the [LICENSE](LICENSE) file for the complete terms.
+---
+
+Built by [Aditya Vidhate](https://github.com/avidhate).
