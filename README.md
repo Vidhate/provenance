@@ -190,4 +190,4 @@ Automatically converts to **Apache 2.0 on February 18, 2030**, at which point it
 
 ---
 
-Built by [Aditya Vidhate](https://github.com/avidhate).
+Built by [Aditya Vidhate](https://curiousadi.com/about/).
