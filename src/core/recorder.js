@@ -45,8 +45,11 @@ export function createRecorder() {
      * Start a new recording session
      */
     async startSession() {
+      // Set synchronously so isActive() returns true immediately — this ensures
+      // the first keystroke (which fires in the same call stack as startSession)
+      // isn't skipped by the isActive() guard in handleEditorInput.
+      isRecording = true;
       return queueOperation(async () => {
-        isRecording = true;
         sessionStartTime = Date.now();
 
         const event = {
