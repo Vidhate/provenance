@@ -2,7 +2,7 @@
 
 **Irrefutable proof that writing was created by a human, through an authentic human process.**
 
-[**Try the demo →**](https://provenance-sand.vercel.app) &nbsp;·&nbsp; [BSL 1.1 License](LICENSE)
+[**Try the demo →**](https://provenance.curiousadi.com) &nbsp;·&nbsp; [BSL 1.1 License](LICENSE)
 
 ---
 
