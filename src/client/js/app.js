@@ -28,6 +28,7 @@ let btnNew, fileInput;
 let charCount, wordCount, eventCount, sessionTime, sessionContext;
 let onboardingModal, btnSkipOnboarding, btnSetupVault;
 let browserWarning, btnDismissWarning;
+let mobileDeviceNotice, btnDismissMobileNotice;
 
 // Flags to track document state
 let pendingAutoCreate = false;  // File not yet created in vault
@@ -99,6 +100,9 @@ async function init() {
     updateSidebarState(false);
   }
 
+  // Show notice for non-desktop devices
+  maybeShowMobileDeviceNotice();
+
   // Create new document
   newDocument();
 
@@ -133,6 +137,8 @@ function getDOMElements() {
   btnSetupVault = document.getElementById('btn-setup-vault');
   browserWarning = document.getElementById('browser-warning');
   btnDismissWarning = document.getElementById('btn-dismiss-warning');
+  mobileDeviceNotice = document.getElementById('mobile-device-notice');
+  btnDismissMobileNotice = document.getElementById('btn-dismiss-mobile-notice');
 }
 
 /**
@@ -163,6 +169,14 @@ function setupEventListeners() {
   // Browser warning
   if (btnDismissWarning) {
     btnDismissWarning.addEventListener('click', hideBrowserWarning);
+  }
+
+  // Mobile device notice
+  if (btnDismissMobileNotice) {
+    btnDismissMobileNotice.addEventListener('click', () => {
+      mobileDeviceNotice.classList.add('hidden');
+      localStorage.setItem('provenance-mobile-notice-dismissed', 'true');
+    });
   }
 
   // Handle page unload - warn about unsaved changes
@@ -949,6 +963,34 @@ async function handleSetupVault() {
   } catch (err) {
     console.error('Vault setup failed:', err);
   }
+}
+
+/**
+ * Returns true when the browser is running on a desktop / laptop.
+ * Phones and tablets return false.
+ *
+ * Strategy:
+ *  1. navigator.userAgentData.mobile (Chrome/Edge) — authoritative for phones,
+ *     but returns false for tablets too, so we add a UA check for tablets.
+ *  2. UA string fallback for Safari / Firefox.
+ */
+function isDesktopBrowser() {
+  if ('userAgentData' in navigator) {
+    if (navigator.userAgentData.mobile) return false;
+    // userAgentData.mobile is false for tablets — catch them via UA
+    if (/iPad|Android(?!.*Mobile)/i.test(navigator.userAgent)) return false;
+    return true;
+  }
+  return !/iPhone|iPad|Android|IEMobile|BlackBerry|webOS/i.test(navigator.userAgent);
+}
+
+/**
+ * Show the mobile/tablet device notice once, unless already dismissed.
+ */
+function maybeShowMobileDeviceNotice() {
+  if (isDesktopBrowser()) return;
+  if (localStorage.getItem('provenance-mobile-notice-dismissed')) return;
+  mobileDeviceNotice?.classList.remove('hidden');
 }
 
 /**
